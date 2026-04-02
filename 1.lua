@@ -1,967 +1,649 @@
--- ==========================================
--- УЛЬТРА-ОПТИМИЗИРОВАННЫЙ EGG FARM (MOBILE LITE EDITION)
--- V6.0: 100% EGG DETECTION + NESTED MODELS SUPPORT
--- ==========================================
-local AutoStart = false
-local ForcedScanInterval = 30
--- ==========================================
+--[[
+    AUTO FISHING SCRIPT
+    Автоматическая рыбалка с авто-кликером в мини-игре
+    
+    Горячие клавиши:
+    F6 - Включить/Выключить авто-рыбалку
+    F7 - Включить/Выключить авто-продажу (продаёт всех рыб кроме epic)
+    F8 - Телепортация к ближайшей точке рыбалки
+]]
 
-local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
-local VirtualInputManager = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
 
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local rootPart = character:WaitForChild("HumanoidRootPart")
+local LocalPlayer = Players.LocalPlayer
+local Packets = ReplicatedStorage:WaitForChild("Packets")
+local FishingPacket = require(Packets:WaitForChild("Fishing"))
+local Modules = ReplicatedStorage:WaitForChild("Modules")
+local Utility = require(Modules:WaitForChild("Utility"))
+local Storage = ReplicatedStorage:WaitForChild("Storage")
+local FishStore = require(Storage:WaitForChild("FishStore"))
+local Replica = Utility.Replica.WaitForReplica(LocalPlayer)
 
-local isFarming = AutoStart
-local activeEggs = {}
-local blacklist = {}
-local tempSkips = {}
-local totalCollected = 0
-local pendingEggs = {} -- яйца, которые ещё ждут появления BasePart
+local FishingPoints = workspace:WaitForChild("Map"):WaitForChild("Miscs"):WaitForChild("FishingPoints")
 
--- ==== СПАВН ВСЕХ ПАРТОВ (КРАСНЫЕ ЗОНЫ) ====
-local debugZonesData = {
-    {Size = Vector3.new(10, 2.5, 10), CFrame = CFrame.new(180.654694, 83.9499969, -592.783386, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(35, 2, 15), CFrame = CFrame.new(191.5, 97, -671, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(16, 2, 25), CFrame = CFrame.new(130.5, 94, -675, 0, 0, 1, 0, 1, -0, -1, 0, 0)},
-    {Size = Vector3.new(10, 2, 25), CFrame = CFrame.new(94.5, 98, -647.5, 0, 0, 1, 0, 1, -0, -1, 0, 0)},
-    {Size = Vector3.new(11, 2, 20), CFrame = CFrame.new(98.5, 88.0000153, -426.5, 0, 0, 1, 0, 1, -0, -1, 0, 0)},
-    {Size = Vector3.new(20, 2, 4), CFrame = CFrame.new(83, 88.0000153, -429.5, 0, 0, 1, 0, 1, -0, -1, 0, 0)},
-    {Size = Vector3.new(8, 2, 16), CFrame = CFrame.new(77, 90.0000153, -442, 0, 0, 1, 0, 1, -0, -1, 0, 0)},
-    {Size = Vector3.new(10, 0.5, 5), CFrame = CFrame.new(173.322296, 86.5, -575.310608, 0.499959469, 0, 0.866048813, 0, 1, 0, -0.866048813, 0, 0.499959469)},
-    {Size = Vector3.new(7, 0.5, 2), CFrame = CFrame.new(189.179077, 87, -602.072876, 0.984812498, -0, -0.173621148, 0, 1, -0, 0.173621148, 0, 0.984812498)},
-    {Size = Vector3.new(6, 5, 18.999996185302734), CFrame = CFrame.new(171, 94, -681.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(38, 2, 25), CFrame = CFrame.new(527, 94.0000153, -124, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(10, 6, 20), CFrame = CFrame.new(541.158752, 117.000008, -268.721222, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(2, 17, 5), CFrame = CFrame.new(566.847534, 190.999985, -165.76091, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(7, 17, 4), CFrame = CFrame.new(569, 197.5, -170.5, 0, 0, 1, 0, 1, -0, -1, 0, 0)},
-    {Size = Vector3.new(7, 8, 5), CFrame = CFrame.new(583.261841, 220.999985, -223.692963, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(7, 230, 25), CFrame = CFrame.new(626.5, 113.5, -192.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(8, 236, 20), CFrame = CFrame.new(624, 118.000015, -157.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)},
-    {Size = Vector3.new(4, 8, 4), CFrame = CFrame.new(575.013, 187.000015, -225, 1, 0, 0, 0, 1, 0, 0, 0, 1)}
+-- ==================== НАСТРОЙКИ ====================
+local CONFIG = {
+    AUTO_FISH_ENABLED = false,       -- Авто-рыбалка
+    AUTO_SELL_ENABLED = false,       -- Авто-продажа
+    AUTO_CLICK_SPEED = 0.11,         -- Скорость авто-клика (секунды между кликами)
+    FISH_DELAY = 2.0,               -- Задержка между забросами (секунды)
+    SELL_KEEP_EPIC = true,           -- Оставлять epic рыб
+    SELL_KEEP_RARE = false,          -- Оставлять rare рыб
+    TELEPORT_TO_SPOT = false,        -- Телепорт к точке
+    MAX_INVENTORY_BEFORE_SELL = 0.9, -- Продавать когда инвентарь заполнен на 90%
 }
 
-task.spawn(function()
-    local folderName = "RedDebugZones"
-    local folder = workspace:FindFirstChild(folderName)
-    if not folder then
-        folder = Instance.new("Folder")
-        folder.Name = folderName
-        folder.Parent = workspace
-    else
-        folder:ClearAllChildren()
-    end
-    for i, data in ipairs(debugZonesData) do
-        local part = Instance.new("Part")
-        part.Name = "Zone_" .. tostring(i)
-        part.Size = data.Size
-        part.CFrame = data.CFrame
-        part.Color = Color3.fromRGB(255, 0, 0)
-        part.Transparency = 0.8
-        part.Material = Enum.Material.SmoothPlastic
-        part.Anchored = true
-        part.CanCollide = true
-        local pathMod = Instance.new("PathfindingModifier")
-        pathMod.Label = "ClimbPlatform"
-        pathMod.PassThrough = false
-        pathMod.Parent = part
-        part.Parent = folder
-    end
-end)
+-- ==================== СОСТОЯНИЕ ====================
+local State = {
+    isFishing = false,
+    isInMinigame = false,
+    isMinigameStarted = false,
+    isWaitingResult = false,
+    currentSpotId = nil,
+    currentSpot = nil,
+    fishProgress = 0.5,
+    catchProgress = 0,
+    successPosition = 0,
+    successWidth = 0.3,
+    gameParams = nil,
+    endingTime = 0,
+    catchValue = 0,
+    catchGoal = 0,
+    minigameConnection = nil,
+    autoClickConnection = nil,
+    mainLoopConnection = nil,
+}
 
--- ==== ЧТЕНИЕ ПОИНТОВ ИЗ GUI (КЭШИРОВАННОЕ) ====
-local cachedPointsLabel = nil
-
-local function findPointsLabel()
-    local ok, result = pcall(function()
-        for _, desc in ipairs(player.PlayerGui:GetDescendants()) do
-            if desc:IsA("TextLabel") then
-                local c = desc.TextColor3
-                if math.abs(c.R - 170/255) < 0.05
-                   and math.abs(c.G - 1) < 0.05
-                   and math.abs(c.B - 127/255) < 0.05 then
-                    local txt = desc.Text
-                    if txt:find("%[") or txt:find("%]") then
-                        continue
-                    end
-                    if txt == "" then
-                        continue
-                    end
-                    return desc
-                end
-            end
-        end
-        return nil
-    end)
-    return ok and result or nil
-end
-
-local function getPointsText()
-    if cachedPointsLabel and cachedPointsLabel.Parent then
-        local txt = cachedPointsLabel.Text
-        if not txt:find("%[") and not txt:find("%]") and txt ~= "" then
-            return txt
-        end
-    end
-    cachedPointsLabel = findPointsLabel()
-    if cachedPointsLabel then
-        return cachedPointsLabel.Text
-    end
-    return nil
-end
-
-task.spawn(function()
-    while true do
-        if not cachedPointsLabel or not cachedPointsLabel.Parent then
-            cachedPointsLabel = findPointsLabel()
-        end
-        task.wait(5)
-    end
-end)
-
--- ==== GUI (ЧЁРНО-БЕЛАЯ, ЧИСТАЯ, МОБИЛЬНАЯ) ====
+-- ==================== UI ====================
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "NexusEggFarm"
+screenGui.Name = "AutoFishGui"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-local okGui = pcall(function() screenGui.Parent = CoreGui end)
-if not okGui then screenGui.Parent = player:WaitForChild("PlayerGui") end
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 180, 0, 140)
-mainFrame.Position = UDim2.new(0.5, -90, 0.15, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+mainFrame.Size = UDim2.new(0, 220, 0, 180)
+mainFrame.Position = UDim2.new(0, 10, 0.5, -90)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.BackgroundTransparency = 0.15
 mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
 mainFrame.Parent = screenGui
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
 
-local border = Instance.new("UIStroke", mainFrame)
-border.Thickness = 1.5
-border.Color = Color3.fromRGB(70, 70, 70)
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = mainFrame
 
-local titleBar = Instance.new("Frame", mainFrame)
-titleBar.Size = UDim2.new(1, 0, 0, 32)
-titleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-titleBar.BorderSizePixel = 0
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 12)
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(80, 130, 255)
+stroke.Thickness = 2
+stroke.Parent = mainFrame
 
-local titleFix = Instance.new("Frame", titleBar)
-titleFix.Size = UDim2.new(1, 0, 0, 12)
-titleFix.Position = UDim2.new(0, 0, 1, -12)
-titleFix.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-titleFix.BorderSizePixel = 0
-
-local title = Instance.new("TextLabel", titleBar)
-title.Size = UDim2.new(1, -35, 1, 0)
-title.Position = UDim2.new(0, 10, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "Nexus Egg Farm"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
+-- Заголовок
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(30, 50, 100)
+title.BackgroundTransparency = 0.3
+title.TextColor3 = Color3.fromRGB(100, 180, 255)
 title.Font = Enum.Font.GothamBold
-title.TextSize = 13
-title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextSize = 14
+title.Text = "🐟 Auto Fishing"
+title.Parent = mainFrame
 
-local minBtn = Instance.new("TextButton", titleBar)
-minBtn.Size = UDim2.new(0, 24, 0, 24)
-minBtn.Position = UDim2.new(1, -28, 0.5, -12)
-minBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-minBtn.Text = "−"
-minBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-minBtn.TextSize = 16
-minBtn.Font = Enum.Font.GothamBold
-minBtn.BorderSizePixel = 0
-Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = title
 
-local content = Instance.new("Frame", mainFrame)
-content.Name = "Content"
-content.Size = UDim2.new(1, -16, 1, -40)
-content.Position = UDim2.new(0, 8, 0, 36)
-content.BackgroundTransparency = 1
-
-local statusLabel = Instance.new("TextLabel", content)
-statusLabel.Size = UDim2.new(1, 0, 0, 16)
-statusLabel.Position = UDim2.new(0, 0, 0, 0)
+-- Статус
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -10, 0, 20)
+statusLabel.Position = UDim2.new(0, 5, 0, 35)
 statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "● Idle"
-statusLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextSize = 11
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Text = "Status: Idle"
+statusLabel.Parent = mainFrame
 
-local countLabel = Instance.new("TextLabel", content)
-countLabel.Size = UDim2.new(1, 0, 0, 16)
-countLabel.Position = UDim2.new(0, 0, 0, 18)
+-- Кнопка авто-рыбалки
+local fishBtn = Instance.new("TextButton")
+fishBtn.Size = UDim2.new(0.9, 0, 0, 28)
+fishBtn.Position = UDim2.new(0.05, 0, 0, 60)
+fishBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+fishBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+fishBtn.Font = Enum.Font.GothamBold
+fishBtn.TextSize = 12
+fishBtn.Text = "[F6] Auto Fish: OFF"
+fishBtn.Parent = mainFrame
+
+local fishBtnCorner = Instance.new("UICorner")
+fishBtnCorner.CornerRadius = UDim.new(0, 6)
+fishBtnCorner.Parent = fishBtn
+
+-- Кнопка авто-продажи
+local sellBtn = Instance.new("TextButton")
+sellBtn.Size = UDim2.new(0.9, 0, 0, 28)
+sellBtn.Position = UDim2.new(0.05, 0, 0, 95)
+sellBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+sellBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+sellBtn.Font = Enum.Font.GothamBold
+sellBtn.TextSize = 12
+sellBtn.Text = "[F7] Auto Sell: OFF"
+sellBtn.Parent = mainFrame
+
+local sellBtnCorner = Instance.new("UICorner")
+sellBtnCorner.CornerRadius = UDim.new(0, 6)
+sellBtnCorner.Parent = sellBtn
+
+-- Кнопка телепорта
+local tpBtn = Instance.new("TextButton")
+tpBtn.Size = UDim2.new(0.9, 0, 0, 28)
+tpBtn.Position = UDim2.new(0.05, 0, 0, 130)
+tpBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+tpBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+tpBtn.Font = Enum.Font.GothamBold
+tpBtn.TextSize = 12
+tpBtn.Text = "[F8] TP to Fishing Spot"
+tpBtn.Parent = mainFrame
+
+local tpBtnCorner = Instance.new("UICorner")
+tpBtnCorner.CornerRadius = UDim.new(0, 6)
+tpBtnCorner.Parent = tpBtn
+
+-- Счётчик пойманных рыб
+local catchCount = 0
+local countLabel = Instance.new("TextLabel")
+countLabel.Size = UDim2.new(1, -10, 0, 16)
+countLabel.Position = UDim2.new(0, 5, 0, 162)
 countLabel.BackgroundTransparency = 1
-countLabel.Text = "Collected: 0"
-countLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+countLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
 countLabel.Font = Enum.Font.Gotham
-countLabel.TextSize = 11
+countLabel.TextSize = 10
 countLabel.TextXAlignment = Enum.TextXAlignment.Left
+countLabel.Text = "Caught: 0"
+countLabel.Parent = mainFrame
 
-local lastLabel = Instance.new("TextLabel", content)
-lastLabel.Size = UDim2.new(1, 0, 0, 16)
-lastLabel.Position = UDim2.new(0, 0, 0, 36)
-lastLabel.BackgroundTransparency = 1
-lastLabel.Text = "Last: —"
-lastLabel.TextColor3 = Color3.fromRGB(130, 130, 130)
-lastLabel.Font = Enum.Font.Gotham
-lastLabel.TextSize = 10
-lastLabel.TextXAlignment = Enum.TextXAlignment.Left
-lastLabel.TextTruncate = Enum.TextTruncate.AtEnd
+-- Делаем GUI перетаскиваемым
+local dragging = false
+local dragStart, startPos
 
-local actionBtn = Instance.new("TextButton", content)
-actionBtn.Size = UDim2.new(1, 0, 0, 36)
-actionBtn.Position = UDim2.new(0, 0, 1, -38)
-actionBtn.Font = Enum.Font.GothamBold
-actionBtn.TextSize = 14
-actionBtn.BorderSizePixel = 0
-Instance.new("UICorner", actionBtn).CornerRadius = UDim.new(0, 8)
-
-local function updateVisuals()
-    if isFarming then
-        actionBtn.Text = "STOP"
-        actionBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-        actionBtn.TextColor3 = Color3.fromRGB(20, 20, 20)
-        border.Color = Color3.fromRGB(200, 200, 200)
-        statusLabel.Text = "● Farming"
-        statusLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-    else
-        actionBtn.Text = "START"
-        actionBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-        actionBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-        border.Color = Color3.fromRGB(70, 70, 70)
-        statusLabel.Text = "● Idle"
-        statusLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
     end
+end)
+
+title.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ==================== ФУНКЦИИ ====================
+
+local function updateUI()
+    if CONFIG.AUTO_FISH_ENABLED then
+        fishBtn.Text = "[F6] Auto Fish: ON"
+        fishBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+    else
+        fishBtn.Text = "[F6] Auto Fish: OFF"
+        fishBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    end
+    
+    if CONFIG.AUTO_SELL_ENABLED then
+        sellBtn.Text = "[F7] Auto Sell: ON"
+        sellBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+    else
+        sellBtn.Text = "[F7] Auto Sell: OFF"
+        sellBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    end
+    
+    countLabel.Text = string.format("Caught: %d", catchCount)
 end
 
-actionBtn.MouseButton1Click:Connect(function()
-    isFarming = not isFarming
-    updateVisuals()
-    if not isFarming then
-        local ap = rootPart:FindFirstChild("FlyPos")
-        local ao = rootPart:FindFirstChild("FlyOri")
-        if ap then ap.Enabled = false end
-        if ao then ao.Enabled = false end
-        humanoid.PlatformStand = false
-        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-    end
-end)
-
-minBtn.MouseButton1Click:Connect(function()
-    if content.Visible then
-        content.Visible = false
-        mainFrame.Size = UDim2.new(0, 180, 0, 32)
-        minBtn.Text = "+"
-    else
-        content.Visible = true
-        mainFrame.Size = UDim2.new(0, 180, 0, 140)
-        minBtn.Text = "−"
-    end
-end)
-
-task.spawn(function()
-    while screenGui.Parent do
-        countLabel.Text = "Collected: " .. totalCollected
-        task.wait(1)
-    end
-end)
-
--- ==== ВЕБХУК ====
-local WebhookURL = "https://discord.com/api/webhooks/1487682721944965256/tz1C65I8X7_cprV0e19VDgfHGwydM0mrsAN6n6j9Gm_cvUbs1_TMPrPsk0AOsbR0Bv8B"
-
-local function getRequestFunc()
-    if syn and syn.request then return syn.request end
-    if http_request then return http_request end
-    if request then return request end
-    if httpRequest then return httpRequest end
-    if fluxus and fluxus.request then return fluxus.request end
-    return nil
+local function setStatus(text)
+    statusLabel.Text = "Status: " .. text
 end
 
-local targetPriorities = {
-    ["andromeda_egg"] = 100, ["angelic_egg"] = 100, ["blooming_egg"] = 100, ["dreamer_egg"] = 100, ["egg_v2"] = 100,
-    ["forest_egg"] = 100, ["hatch_egg"] = 100, ["royal_egg"] = 100, ["the_egg_of_the_sky"] = 100, ["placeholder_egg"] = 100,
-    ["random_potion_egg_2"] = 52, ["random_potion_egg_1"] = 51, ["point_egg_6"] = 16, ["point_egg_5"] = 15,
-    ["point_egg_4"] = 14, ["point_egg_3"] = 13, ["point_egg_2"] = 12, ["point_egg_1"] = 11
-}
-
-local function sendWebhook(eggName, isSuccess, pointsValue)
-    task.spawn(function()
-        local reqFunc = getRequestFunc()
-        if not reqFunc or WebhookURL == "" then return end
-
-        local ok, err = pcall(function()
-            local priority = targetPriorities[eggName] or 0
-            local isPriority100 = (priority == 100)
-
-            local prettyName = eggName:gsub("_", " "):gsub("(%a)([%w]*)", function(a, b) return a:upper() .. b end)
-
-            local rarityTag = "Common"
-            local embedColor = 8421504
-            if priority == 100 then
-                rarityTag = "LEGENDARY"
-                embedColor = 16766720
-            elseif priority >= 50 then
-                rarityTag = "Epic"
-                embedColor = 10494192
-            elseif priority >= 14 then
-                rarityTag = "Rare"
-                embedColor = 3447003
-            elseif priority >= 11 then
-                rarityTag = "Common"
-                embedColor = 8421504
+-- Найти ближайшую точку рыбалки
+local function findNearestSpot()
+    local character = LocalPlayer.Character
+    if not character then return nil, nil end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil, nil end
+    
+    local nearest = nil
+    local nearestDist = math.huge
+    
+    for _, spot in pairs(FishingPoints:GetChildren()) do
+        if spot:IsA("Model") and not spot:GetAttribute("occupied") then
+            local pos = spot:GetPivot().Position
+            local dist = (hrp.Position - pos).Magnitude
+            if dist < nearestDist then
+                nearest = spot
+                nearestDist = dist
             end
+        end
+    end
+    
+    return nearest, nearestDist
+end
 
-            if not isSuccess then
-                embedColor = 16711680
-            end
+-- Телепорт к точке рыбалки
+local function teleportToSpot()
+    local spot, _ = findNearestSpot()
+    if not spot then
+        setStatus("No fishing spot found!")
+        return false
+    end
+    
+    local character = LocalPlayer.Character
+    if not character then return false end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    
+    -- Используем plrLoc атрибут если есть, иначе позицию модели
+    local targetCF = spot:GetAttribute("plrLoc")
+    if targetCF then
+        hrp.CFrame = targetCF
+    else
+        hrp.CFrame = spot:GetPivot() + Vector3.new(0, 3, 0)
+    end
+    
+    setStatus("Teleported!")
+    task.wait(0.5)
+    return true
+end
 
-            local pointsStr = pointsValue or "N/A"
-
-            local fields = {
-                {["name"] = "Egg", ["value"] = prettyName, ["inline"] = true},
-                {["name"] = "Rarity", ["value"] = rarityTag, ["inline"] = true},
-                {["name"] = "Priority", ["value"] = tostring(priority), ["inline"] = true},
-                {["name"] = "Total Collected", ["value"] = tostring(totalCollected), ["inline"] = true},
-                {["name"] = "Points", ["value"] = pointsStr, ["inline"] = true},
-                {["name"] = "Player", ["value"] = player.Name .. " (" .. player.DisplayName .. ")", ["inline"] = true}
-            }
-
-            local embedTitle
-            if isPriority100 then
-                embedTitle = "LEGENDARY EGG COLLECTED!"
-            elseif isSuccess then
-                embedTitle = "Egg Collected"
-            else
-                embedTitle = "Collection Failed"
-            end
-
-            local body = {
-                ["embeds"] = {{
-                    ["title"] = embedTitle,
-                    ["description"] = isSuccess and ("**" .. prettyName .. "** has been collected!") or ("Failed to collect **" .. prettyName .. "**"),
-                    ["color"] = embedColor,
-                    ["fields"] = fields,
-                    ["footer"] = {["text"] = "Nexus Egg Farm | " .. os.date("%H:%M:%S")},
-                    ["timestamp"] = DateTime.now():ToIsoDate()
-                }}
-            }
-
-            if isPriority100 then
-                body["content"] = "@everyone LEGENDARY EGG!"
-            end
-
-            reqFunc({
-                Url = WebhookURL,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode(body)
-            })
+-- Авто-продажа рыб
+local function autoSell()
+    if not CONFIG.AUTO_SELL_ENABLED then return end
+    
+    local inventory = Replica.Data.FishInventory
+    local inventorySize = Replica.Data.FishInventorySize or 10
+    
+    -- Считаем рыб
+    local fishCount = 0
+    for _ in pairs(inventory) do
+        fishCount = fishCount + 1
+    end
+    
+    -- Проверяем заполненность инвентаря
+    if fishCount / inventorySize < CONFIG.MAX_INVENTORY_BEFORE_SELL then
+        return
+    end
+    
+    setStatus("Selling fish...")
+    
+    -- Находим рыбу для продажи
+    for uid, fish in pairs(inventory) do
+        local fishInfo = nil
+        pcall(function()
+            fishInfo = FishStore.getFishInfo(fish.id)
         end)
-
-        if not ok then
-            warn("[Webhook Error]: " .. tostring(err))
-        end
-    end)
-end
-
--- ==== ЗОНЫ ====
-local blacklistZone1 = { Size = Vector3.new(150, 90, 150), CFrame = CFrame.new(-28.1648, 128.4687, -123.9840) }
-local islandZones = {
-    [4] = { Parent = nil, Size = Vector3.new(50, 20, 50), CFrame = CFrame.new(541.4514, 98.0000, -108.5778), Path = { Vector3.new(504.7574, 97.9906, -137.8735), Vector3.new(511.1336, 98.0000, -125.9527) }},
-    [5] = { Parent = nil, Size = Vector3.new(40, 20, 40), CFrame = CFrame.new(160, 100, -680.759), Path = { Vector3.new(186.326, 101.00, -675.180), Vector3.new(165.688, 100.00, -676.847) }},
-    [6] = { Parent = 5, Size = Vector3.new(50, 30, 50), CFrame = CFrame.new(119.151, 111.00, -666.513), Path = { Vector3.new(143.737, 97.969, -678.703), Vector3.new(131.039, 97.981, -678.368) }}
-}
-
-local function checkZone(pos)
-    local lp1 = blacklistZone1.CFrame:PointToObjectSpace(pos)
-    if math.abs(lp1.X) <= (blacklistZone1.Size.X / 2) and math.abs(lp1.Y) <= (blacklistZone1.Size.Y / 2) and math.abs(lp1.Z) <= (blacklistZone1.Size.Z / 2) then return "BLACKLIST" end
-    for id, data in pairs(islandZones) do
-        local lp = data.CFrame:PointToObjectSpace(pos)
-        if math.abs(lp.X) <= data.Size.X/2 and math.abs(lp.Y) <= data.Size.Y/2 and math.abs(lp.Z) <= data.Size.Z/2 then return id end
-    end
-    return nil
-end
-
-local rayParams = RaycastParams.new()
-rayParams.FilterType, rayParams.RespectCanCollide, rayParams.IgnoreWater = Enum.RaycastFilterType.Exclude, true, true
-
-player.CharacterAdded:Connect(function(nc)
-    character, humanoid, rootPart = nc, nc:WaitForChild("Humanoid"), nc:WaitForChild("HumanoidRootPart")
-    rayParams.FilterDescendantsInstances = {character}
-end)
-rayParams.FilterDescendantsInstances = {character}
-
-local function setupDangerZones()
-    local map = workspace:FindFirstChild("Map")
-    if not map then return end
-    local function applyModifier(part)
-        if part:IsA("BasePart") then
-            if not part:FindFirstChild("DangerMod") then
-                local mod = Instance.new("PathfindingModifier")
-                mod.Name = "DangerMod"
-                mod.Label = "DangerZone"
-                mod.Parent = part
+        
+        if fishInfo then
+            local shouldKeep = false
+            if CONFIG.SELL_KEEP_EPIC and fishInfo.tier == "epic" then
+                shouldKeep = true
+            end
+            if CONFIG.SELL_KEEP_RARE and fishInfo.tier == "rare" then
+                shouldKeep = true
+            end
+            
+            if not shouldKeep then
+                -- Продаём рыбу
+                FishingPacket.sellFish.send(uid)
+                task.wait(0.3)
             end
         end
     end
-    local miscs = map:FindFirstChild("Miscs")
-    if miscs then
-        local waterBlocks = miscs:FindFirstChild("WaterBlocks")
-        if waterBlocks then
-            for _, block in ipairs(waterBlocks:GetChildren()) do
-                if block.Name == "WaterBlock" then applyModifier(block) end
-            end
-        end
-    end
-    local lava = map:FindFirstChild("lava")
-    if lava then
-        for _, part in ipairs(lava:GetDescendants()) do applyModifier(part) end
-    end
-end
-setupDangerZones()
-
--- ==== СИСТЕМА ОБНАРУЖЕНИЯ ЯИЦ (100% DETECTION) ====
-
--- Ищет egg-модель вверх по иерархии от любого объекта
-local function findEggAncestor(obj)
-    local current = obj
-    while current and current ~= workspace do
-        if targetPriorities[current.Name] then
-            return current
-        end
-        current = current.Parent
-    end
-    return nil
+    
+    task.wait(1)
 end
 
--- Пытается зарегистрировать яйцо (возвращает true если нашёл BasePart)
-local function tryRegisterEgg(eggModel)
-    if not eggModel or not eggModel.Parent then return false end
-    if not targetPriorities[eggModel.Name] then return false end
-    if activeEggs[eggModel] or blacklist[eggModel] then return true end -- уже обработано
+-- ==================== МИНИ-ИГРА ====================
 
-    local p = nil
-    if eggModel:IsA("BasePart") then
-        p = eggModel
+-- Симуляция мини-игры (авто-кликер)
+local minigameRandom = Random.new()
+local mg_targetPos = 0
+local mg_currentPos = 0
+local mg_nextMoveTime = 0
+local mg_nextMoveDuration = 0
+
+local function simulateMinigame(dt)
+    if not State.isMinigameStarted or not State.gameParams then return end
+    
+    local params = State.gameParams
+    local now = tick()
+    
+    -- Движение зоны успеха (имитируем серверную логику)
+    if now >= mg_nextMoveTime then
+        mg_nextMoveTime = now + minigameRandom:NextNumber(params.minMoveInterval, params.maxMoveInterval)
+        local moveRange = params.moveRange or 0.1
+        local newTarget = mg_targetPos + (math.random() * 2 - 1) * moveRange * 0.75
+        mg_targetPos = math.clamp(newTarget, 0, 1 - params.successWidth)
+    end
+    
+    mg_currentPos = mg_currentPos + (mg_targetPos - mg_currentPos) * params.moveSpeed * dt
+    mg_currentPos = math.clamp(mg_currentPos, 0, 1 - params.successWidth)
+    
+    local successEnd = mg_currentPos + params.successWidth
+    
+    -- Decay fishProgress
+    State.fishProgress = math.clamp(State.fishProgress - params.decayRate * dt, 0, 1)
+    
+    -- Проверяем попадание
+    local inZone = State.fishProgress >= mg_currentPos and State.fishProgress <= successEnd
+    
+    if inZone then
+        State.catchProgress = math.clamp(
+            State.catchProgress + State.catchValue * params.catchFillScale * dt, 0, 100
+        )
     else
-        -- Рекурсивный поиск BasePart внутри модели (любая вложенность)
-        p = eggModel:FindFirstChildWhichIsA("BasePart", true)
+        State.catchProgress = math.clamp(
+            State.catchProgress - State.catchValue * params.catchDecayScale * dt, 0, 100
+        )
     end
-
-    if p then
-        if checkZone(p.Position) == "BLACKLIST" then
-            blacklist[eggModel] = true
-        else
-            activeEggs[eggModel] = p
+    
+    -- Проверяем окончание
+    if State.endingTime < now then
+        local won = State.catchProgress / 100 > State.catchGoal
+        State.isInMinigame = false
+        State.isMinigameStarted = false
+        
+        if State.minigameConnection then
+            State.minigameConnection:Disconnect()
+            State.minigameConnection = nil
         end
-        pendingEggs[eggModel] = nil -- убираем из ожидания
-        return true
-    end
-    return false
-end
-
--- Запускает отложенную регистрацию для яйца, у которого ещё нет BasePart
-local function scheduleEggWatch(eggModel)
-    if not eggModel or not targetPriorities[eggModel.Name] then return end
-    if activeEggs[eggModel] or blacklist[eggModel] then return end
-    if pendingEggs[eggModel] then return end -- уже следим
-
-    pendingEggs[eggModel] = true
-
-    task.spawn(function()
-        -- Серия быстрых попыток
-        for _, delay in ipairs({0.1, 0.3, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0}) do
-            task.wait(delay)
-            if not eggModel or not eggModel.Parent then
-                pendingEggs[eggModel] = nil
-                return
-            end
-            if tryRegisterEgg(eggModel) then
-                return
-            end
+        if State.autoClickConnection then
+            State.autoClickConnection:Disconnect()
+            State.autoClickConnection = nil
         end
-
-        -- Если всё ещё не нашли — подписываемся на DescendantAdded
-        if eggModel and eggModel.Parent and not activeEggs[eggModel] and not blacklist[eggModel] then
-            local conn
-            conn = eggModel.DescendantAdded:Connect(function(desc)
-                if desc:IsA("BasePart") then
-                    if tryRegisterEgg(eggModel) then
-                        if conn and conn.Connected then
-                            conn:Disconnect()
-                        end
-                    end
-                end
-            end)
-
-            -- Автоотключение через 60 сек (на случай если яйцо никогда не получит BasePart)
-            task.delay(60, function()
-                if conn and conn.Connected then
-                    conn:Disconnect()
-                end
-                pendingEggs[eggModel] = nil
-            end)
-
-            -- Ещё одна попытка после подписки (на случай race condition)
-            task.wait(0.1)
-            if tryRegisterEgg(eggModel) then
-                if conn and conn.Connected then
-                    conn:Disconnect()
-                end
-            end
-        else
-            pendingEggs[eggModel] = nil
-        end
-    end)
-end
-
--- Главная функция проверки объекта
-local function checkAndAddEgg(obj)
-    if not obj or not obj.Parent then return end
-
-    -- Случай 1: сам объект — это яйцо
-    if targetPriorities[obj.Name] then
-        if not tryRegisterEgg(obj) then
-            -- BasePart ещё не загрузился — ставим на отслеживание
-            scheduleEggWatch(obj)
-        end
-    end
-
-    -- Случай 2: объект — это BasePart внутри яйца (может быть на любом уровне вложенности)
-    if obj:IsA("BasePart") then
-        local eggAncestor = findEggAncestor(obj)
-        if eggAncestor then
-            tryRegisterEgg(eggAncestor)
-        end
-    end
-
-    -- Случай 3: объект — это промежуточная папка/модель внутри яйца (например "Egg", "Eggs")
-    -- Проверяем, есть ли у его предка имя яйца
-    if obj:IsA("Model") or obj:IsA("Folder") then
-        local eggAncestor = findEggAncestor(obj)
-        if eggAncestor and eggAncestor ~= obj then
-            -- Внутрь этой папки могли добавиться парты
-            tryRegisterEgg(eggAncestor)
-        end
+        
+        FishingPacket.gameResult.send(won)
+        State.isWaitingResult = true
+        setStatus(won and "Won minigame!" or "Lost minigame...")
     end
 end
 
--- Полное сканирование workspace
-local function scanWorkspace()
-    setupDangerZones()
+-- Авто-клик: держим fishProgress в центре зоны успеха
+local lastClickTime = 0
 
-    -- Сначала ищем все объекты с именами яиц
-    local descendants = workspace:GetDescendants()
-    for i, o in ipairs(descendants) do
-        if targetPriorities[o.Name] then
-            if not tryRegisterEgg(o) then
-                scheduleEggWatch(o)
-            end
-        end
-        if i % 200 == 0 then task.wait() end
+local function autoClick()
+    if not State.isMinigameStarted or not State.gameParams then return end
+    
+    local now = tick()
+    if now - lastClickTime < CONFIG.AUTO_CLICK_SPEED then return end
+    
+    local params = State.gameParams
+    
+    -- Целевая позиция — центр зоны успеха
+    local targetFishPos = mg_currentPos + params.successWidth / 2
+    
+    -- Кликаем только если fishProgress ниже целевой позиции
+    if State.fishProgress < targetFishPos + 0.05 then
+        lastClickTime = now
+        State.fishProgress = math.clamp(
+            State.fishProgress + params.clickIncrease, 0, 1
+        )
     end
 end
 
-scanWorkspace()
+-- ==================== СЛУШАТЕЛИ ПАКЕТОВ ====================
 
--- Слушаем ВСЕ новые объекты в workspace
-workspace.DescendantAdded:Connect(function(obj)
-    -- Маленькая задержка чтобы дочерние объекты успели подгрузиться
-    task.defer(function()
-        checkAndAddEgg(obj)
-    end)
-end)
-
-workspace.DescendantRemoving:Connect(function(o)
-    activeEggs[o] = nil
-    blacklist[o] = nil
-    tempSkips[o] = nil
-    pendingEggs[o] = nil
-
-    -- Если удаляется BasePart — проверяем, не был ли он привязан к яйцу
-    -- (яйцо потеряло свой парт, возможно исчезло)
-    local eggAncestor = findEggAncestor(o)
-    if eggAncestor then
-        -- Проверяем, есть ли ещё парт у этого яйца
-        local stillHasPart = eggAncestor:FindFirstChildWhichIsA("BasePart", true)
-        if not stillHasPart then
-            activeEggs[eggAncestor] = nil
-        end
+-- Начало рыбалки
+FishingPacket.beginFishing.listen(function(text)
+    if CONFIG.AUTO_FISH_ENABLED then
+        State.isFishing = true
+        State.isWaitingResult = false
+        setStatus("Fishing: " .. tostring(text))
     end
 end)
 
--- Периодическое полное сканирование
-task.spawn(function()
-    while true do
-        task.wait(ForcedScanInterval)
-        if isFarming then scanWorkspace() end
+-- Начало мини-игры
+FishingPacket.playGame.listen(function(params)
+    if CONFIG.AUTO_FISH_ENABLED then
+        State.gameParams = params
+        State.isInMinigame = true
+        
+        -- Инициализация
+        local initPos = 0.5 - params.successWidth / 2
+        mg_currentPos = math.max(0, initPos)
+        mg_targetPos = mg_currentPos
+        mg_nextMoveTime = tick() + minigameRandom:NextNumber(params.minMoveInterval, params.maxMoveInterval)
+        
+        local duration = tonumber(params.endTimestamp) - workspace:GetServerTimeNow()
+        State.endingTime = duration + tick()
+        State.fishProgress = 0.5
+        State.catchProgress = 0
+        State.catchValue = 100 / (duration - 1.5)
+        State.catchGoal = params.catchGoal
+        
+        setStatus("Minigame started!")
+        
+        -- Ждём 1.5 секунды как в оригинале
+        task.delay(1.5, function()
+            State.isMinigameStarted = true
+            
+            -- Подключаем симуляцию мини-игры
+            if State.minigameConnection then
+                State.minigameConnection:Disconnect()
+            end
+            State.minigameConnection = RunService.RenderStepped:Connect(simulateMinigame)
+            
+            -- Подключаем авто-кликер
+            if State.autoClickConnection then
+                State.autoClickConnection:Disconnect()
+            end
+            State.autoClickConnection = RunService.RenderStepped:Connect(autoClick)
+        end)
     end
 end)
 
-local function getBestEgg()
-    local bestO, bestP, bestPr, minDist = nil, nil, -1, math.huge
-    local rPos = rootPart.Position
-    for o, p in pairs(activeEggs) do
-        if not blacklist[o] and not tempSkips[o] then
-            if p and p.Parent and p.Transparency < 1 then
-                local pr = targetPriorities[o.Name] or 0
-                local pPos = p.Position
-                local d = math.sqrt((rPos.X - pPos.X)^2 + (rPos.Y - pPos.Y)^2 + (rPos.Z - pPos.Z)^2)
-                if pr > bestPr or (pr == bestPr and d < minDist) then
-                    bestO, bestP, bestPr, minDist = o, p, pr, d
-                end
-            else
-                -- Парт исчез — пробуем найти новый
-                if o and o.Parent then
-                    local newP = o:FindFirstChildWhichIsA("BasePart", true)
-                    if newP and newP.Transparency < 1 then
-                        activeEggs[o] = newP
-                        p = newP
-                        local pr = targetPriorities[o.Name] or 0
-                        local pPos = p.Position
-                        local d = math.sqrt((rPos.X - pPos.X)^2 + (rPos.Y - pPos.Y)^2 + (rPos.Z - pPos.Z)^2)
-                        if pr > bestPr or (pr == bestPr and d < minDist) then
-                            bestO, bestP, bestPr, minDist = o, p, pr, d
-                        end
-                    else
-                        activeEggs[o] = nil
-                    end
-                else
-                    activeEggs[o] = nil
-                end
+-- Результат (награда)
+FishingPacket.reward.listen(function(rewardData)
+    if CONFIG.AUTO_FISH_ENABLED then
+        State.isFishing = false
+        State.isWaitingResult = false
+        State.isInMinigame = false
+        State.isMinigameStarted = false
+        
+        if rewardData.rewardType ~= "Failed" then
+            catchCount = catchCount + 1
+            
+            local fishName = "Unknown"
+            if rewardData.rewardInfo then
+                pcall(function()
+                    local info = FishStore.getFishInfo(rewardData.rewardInfo.id)
+                    fishName = info.name or rewardData.rewardInfo.id
+                end)
             end
-        end
-    end
-    return bestO, bestP
-end
-
--- ==== FLY SYSTEM ====
-local function setupFly()
-    local att = rootPart:FindFirstChild("FlyAtt") or Instance.new("Attachment", rootPart)
-    att.Name = "FlyAtt"
-    local ap = rootPart:FindFirstChild("FlyPos") or Instance.new("AlignPosition", rootPart)
-    ap.Name, ap.Mode, ap.Attachment0, ap.MaxForce, ap.Responsiveness = "FlyPos", Enum.PositionAlignmentMode.OneAttachment, att, 9999999, 80
-    ap.Enabled = false
-    local ao = rootPart:FindFirstChild("FlyOri") or Instance.new("AlignOrientation", rootPart)
-    ao.Name, ao.Mode, ao.Attachment0, ao.MaxTorque, ao.Responsiveness = "FlyOri", Enum.OrientationAlignmentMode.OneAttachment, att, 9999999, 80
-    ao.Enabled = false
-    return ap, ao
-end
-
-local function flyTo(targetPos, isJump, maxTime)
-    if not humanoid or humanoid.Health <= 0 then return false end
-
-    local ap, ao = setupFly()
-    humanoid.PlatformStand = true
-    ap.Enabled, ao.Enabled = true, true
-    ap.MaxVelocity = humanoid.WalkSpeed
-
-    local hOff = (humanoid.RigType == Enum.HumanoidRigType.R15) and (humanoid.HipHeight + rootPart.Size.Y / 2) or 3
-    local bY = targetPos.Y + hOff
-
-    local reached, stuckT, lastP, startT = false, 0, rootPart.Position, tick()
-    local stuckAttempts = 0
-
-    local hover = RunService.Heartbeat:Connect(function()
-        if not isFarming or humanoid.Health <= 0 then return end
-
-        local cPos = rootPart.Position
-        local tX, tZ = targetPos.X, targetPos.Z
-        local dx, dz = tX - cPos.X, tZ - cPos.Z
-        local flatDist = math.sqrt(dx * dx + dz * dz)
-        local heightDiff = bY - cPos.Y
-        local mDir = Vector3.zero
-
-        if flatDist > 0.3 then mDir = Vector3.new(dx, 0, dz).Unit end
-
-        local hasObstacleAhead = false
-        if mDir ~= Vector3.zero then
-            local hitMid = workspace:Raycast(cPos, mDir * 4, rayParams)
-            local hitFeet = workspace:Raycast(cPos - Vector3.new(0, 2.5, 0), mDir * 4, rayParams)
-            hasObstacleAhead = (hitMid ~= nil) or (hitFeet ~= nil)
-        end
-
-        if heightDiff > 2 then
-            if hasObstacleAhead then
-                ap.Position = Vector3.new(cPos.X, cPos.Y + 12, cPos.Z)
-                return
-            end
-            ap.Position = Vector3.new(tX, bY + 1.5, tZ)
-            return
-        end
-
-        if heightDiff < -2 then
-            if flatDist < 4 then
-                local blockBelow = workspace:Raycast(cPos, Vector3.new(0, -3, 0), rayParams)
-                if blockBelow and (cPos.Y - blockBelow.Position.Y) < 2.5 then
-                    local nudge = mDir * 5
-                    if nudge.Magnitude < 0.1 then nudge = rootPart.CFrame.RightVector * 4 end
-                    ap.Position = cPos + nudge + Vector3.new(0, -1, 0)
-                else
-                    ap.Position = Vector3.new(tX, bY, tZ)
-                end
-                return
-            end
-
-            if hasObstacleAhead then
-                if heightDiff < -10 then
-                    local side = rootPart.CFrame.RightVector * 5
-                    ap.Position = cPos + side + Vector3.new(0, -2, 0)
-                else
-                    ap.Position = Vector3.new(cPos.X, cPos.Y + 6, cPos.Z)
-                end
-                return
-            end
-            ap.Position = Vector3.new(tX, bY, tZ)
-            return
-        end
-
-        if hasObstacleAhead then
-            ap.Position = Vector3.new(cPos.X, cPos.Y + 10, cPos.Z)
-            return
-        end
-
-        ap.Position = Vector3.new(tX, bY, tZ)
-    end)
-
-    while not reached and isFarming and humanoid and humanoid.Health > 0 do
-        if maxTime and (tick() - startT) >= maxTime then break end
-        task.wait()
-
-        ao.CFrame = CFrame.lookAt(rootPart.Position, Vector3.new(targetPos.X, rootPart.Position.Y, targetPos.Z))
-
-        local cPos = rootPart.Position
-        local currentFlatDist = math.sqrt((cPos.X - targetPos.X)^2 + (cPos.Z - targetPos.Z)^2)
-
-        if currentFlatDist < 3 and math.abs(cPos.Y - bY) < 5 then
-            reached = true
-            break
-        end
-
-        local moved = math.sqrt((cPos.X - lastP.X)^2 + (cPos.Y - lastP.Y)^2 + (cPos.Z - lastP.Z)^2)
-        if moved < 0.12 then
-            stuckT = stuckT + task.wait()
-            if stuckT > 1.5 then
-                stuckAttempts = stuckAttempts + 1
-                stuckT = 0
-                if stuckAttempts >= 4 then break end
-
-                local hDiff = bY - cPos.Y
-                if hDiff < -3 then
-                    local sideDir = rootPart.CFrame.RightVector * (stuckAttempts % 2 == 0 and 7 or -7)
-                    ap.Position = cPos + sideDir + Vector3.new(0, -4, 0)
-                elseif hDiff > 3 then
-                    ap.Position = cPos - rootPart.CFrame.LookVector * 5 + Vector3.new(0, 10, 0)
-                else
-                    ap.Position = cPos - rootPart.CFrame.LookVector * 6 + Vector3.new(0, 3, 0)
-                end
-                task.wait(0.6)
-            end
+            
+            setStatus("Caught: " .. fishName .. " (#" .. catchCount .. ")")
         else
-            stuckT = 0
+            setStatus("Failed to catch!")
         end
-        lastP = cPos
+        
+        updateUI()
     end
+end)
 
-    hover:Disconnect()
-    ap.Enabled, ao.Enabled = false, false
-    return reached
-end
+-- Выход из рыбалки
+FishingPacket.quit.listen(function()
+    State.isFishing = false
+    State.isInMinigame = false
+    State.isMinigameStarted = false
+    State.isWaitingResult = false
+    
+    if State.minigameConnection then
+        State.minigameConnection:Disconnect()
+        State.minigameConnection = nil
+    end
+    if State.autoClickConnection then
+        State.autoClickConnection:Disconnect()
+        State.autoClickConnection = nil
+    end
+    
+    if CONFIG.AUTO_FISH_ENABLED then
+        setStatus("Quit detected, restarting...")
+    end
+end)
 
-local function getChainTo(targetId)
-    local chain = {}
-    local curr = targetId
-    while curr do table.insert(chain, 1, curr) curr = islandZones[curr].Parent end
-    return chain
-end
+-- Подтверждение продажи (авто-подтверждаем)
+FishingPacket.sellFish.listen(function(uid)
+    if CONFIG.AUTO_SELL_ENABLED then
+        task.wait(0.2)
+        FishingPacket.sellConfirm.send(true)
+    end
+end)
 
-local function smartPath(targetPos, checkPart, huntStart)
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 3,
-        AgentHeight = 5,
-        AgentCanJump = true,
-        WaypointSpacing = 3,
-        Costs = {
-            Water = math.huge,
-            DangerZone = math.huge,
-            ClimbPlatform = 0.1
-        }
-    })
-    local success, _ = pcall(function() path:ComputeAsync(rootPart.Position, targetPos) end)
-    if not success or path.Status ~= Enum.PathStatus.Success then return "NoPath" end
-    local wps = path:GetWaypoints()
-    for i = 2, #wps do
-        if not isFarming or humanoid.Health <= 0 then return "Failed" end
-        if huntStart and tick() - huntStart > 60 then return "Timeout" end
-        if checkPart and (not checkPart.Parent or checkPart.Transparency == 1) then return "Failed" end
+FishingPacket.sellConfirm.listen(function()
+    -- Продажа подтверждена
+end)
 
-        local cPos = rootPart.Position
-        if math.sqrt((cPos.X - targetPos.X)^2 + (cPos.Y - targetPos.Y)^2 + (cPos.Z - targetPos.Z)^2) < 8 then return "Reached" end
+-- ==================== ГЛАВНЫЙ ЦИКЛ ====================
 
-        if not flyTo(wps[i].Position, wps[i].Action == Enum.PathWaypointAction.Jump, 4) then
-            local cY = rootPart.Position.Y
-            local tY = wps[i].Position.Y
-            if cY > tY + 5 then
-                flyTo(rootPart.Position + rootPart.CFrame.RightVector * 6 + Vector3.new(0, -3, 0), false, 1)
-            elseif cY < tY - 5 then
-                flyTo(rootPart.Position - rootPart.CFrame.LookVector * 5 + Vector3.new(0, 8, 0), false, 1)
-            else
-                flyTo(rootPart.Position + (-rootPart.CFrame.LookVector * 5), false, 0.5)
+local function mainLoop()
+    while task.wait(0.5) do
+        if CONFIG.AUTO_FISH_ENABLED then
+            -- Проверяем, не идёт ли уже рыбалка
+            if State.isFishing or State.isInMinigame or State.isWaitingResult then
+                continue
             end
-            return "Stuck"
-        end
-    end
-    return "Reached"
-end
-
-local function interactWithPrompt(obj)
-    -- Ищем ProximityPrompt в самом объекте и во всех потомках
-    local pr = nil
-    if obj:IsA("ProximityPrompt") then
-        pr = obj
-    else
-        pr = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-    end
-
-    if pr then
-        if fireproximityprompt then
-            fireproximityprompt(pr, 1)
-            task.wait(0.2)
-        else
-            local key = pr.KeyboardKeyCode == Enum.KeyCode.Unknown and Enum.KeyCode.E or pr.KeyboardKeyCode
-            VirtualInputManager:SendKeyEvent(true, key, false, game)
-            task.wait(pr.HoldDuration + 0.2)
-            VirtualInputManager:SendKeyEvent(false, key, false, game)
-        end
-        return true
-    end
-    return false
-end
-
-local function huntTarget(obj, p)
-    if not p or not p.Parent then return end
-    local eggName, huntStart, tarZone, isEarlyExit = tostring(obj.Name), tick(), checkZone(p.Position), false
-    local startZone = checkZone(rootPart.Position)
-
-    if typeof(tarZone) == "number" and startZone ~= tarZone then
-        local chain = getChainTo(tarZone)
-        for _, zoneId in ipairs(chain) do
-            if not isEarlyExit and checkZone(rootPart.Position) ~= zoneId then
-                local data = islandZones[zoneId]
-                local cPos = rootPart.Position
-                local dPos = data.Path[1]
-
-                if math.sqrt((cPos.X - dPos.X)^2 + (cPos.Y - dPos.Y)^2 + (cPos.Z - dPos.Z)^2) > 15 then
-                    local res = smartPath(dPos, p, huntStart)
-                    if res == "Timeout" or res == "NoPath" then isEarlyExit = true end
+            
+            -- Авто-продажа перед началом
+            if CONFIG.AUTO_SELL_ENABLED then
+                autoSell()
+            end
+            
+            -- Находим ближайшую точку
+            local spot, dist = findNearestSpot()
+            if not spot then
+                setStatus("No fishing spot nearby")
+                task.wait(2)
+                continue
+            end
+            
+            if dist > 10 then
+                if CONFIG.TELEPORT_TO_SPOT then
+                    teleportToSpot()
+                    task.wait(1)
+                    spot, dist = findNearestSpot()
                 end
-
-                if not isEarlyExit then
-                    for i = 1, #data.Path do
-                        if not isFarming or humanoid.Health <= 0 or (tick() - huntStart > 60) then isEarlyExit = true break end
-                        flyTo(data.Path[i], false, 6)
-                    end
+                
+                if not spot or dist > 10 then
+                    setStatus("Too far from spot (" .. math.floor(dist) .. " studs)")
+                    task.wait(1)
+                    continue
                 end
             end
-        end
-    end
-
-    if not isEarlyExit then
-        while p and p.Parent and p.Transparency < 1 do
-            if not isFarming or humanoid.Health <= 0 then break end
-
-            if tick() - huntStart > 60 then
-                tempSkips[obj] = true
-                break
+            
+            local spotId = spot:GetAttribute("spotId")
+            if not spotId then
+                setStatus("Spot has no ID")
+                task.wait(1)
+                continue
             end
-
-            local cPos = rootPart.Position
-            local pPos = p.Position
-            if math.sqrt((cPos.X - pPos.X)^2 + (cPos.Y - pPos.Y)^2 + (cPos.Z - pPos.Z)^2) < 8 then
-                humanoid.PlatformStand = false
-                humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            
+            -- Начинаем рыбалку
+            setStatus("Casting rod...")
+            State.currentSpot = spot
+            State.currentSpotId = spotId
+            FishingPacket.start.send(spotId)
+            
+            -- Ждём начала или таймаут
+            local waitStart = tick()
+            while not State.isFishing and tick() - waitStart < 10 do
                 task.wait(0.1)
-
-                -- Пробуем взаимодействовать с яйцом и его потомками
-                local prompted = interactWithPrompt(obj)
-
-                -- Если не нашли промпт в модели — ищем в парте
-                if not prompted and p then
-                    interactWithPrompt(p)
-                end
-
-                local wt = 0
-                while p and p.Parent and p.Transparency < 1 and wt < 2 do task.wait(0.1) wt = wt + 0.1 end
-
-                totalCollected = totalCollected + 1
-
-                local pointsNow = getPointsText()
-
-                local prettyName = eggName:gsub("_", " "):gsub("(%a)([%w]*)", function(a, b) return a:upper() .. b end)
-                lastLabel.Text = "Last: " .. prettyName
-                countLabel.Text = "Collected: " .. totalCollected
-
-                sendWebhook(eggName, true, pointsNow)
-
-                tempSkips = {}
-                break
             end
-
-            local status = smartPath(pPos, p, huntStart)
-            if status == "Timeout" or status == "NoPath" or status == "Failed" then
-                tempSkips[obj] = true
-                break
+            
+            if not State.isFishing then
+                setStatus("Timeout waiting for fish start")
+                task.wait(CONFIG.FISH_DELAY)
+                continue
             end
+            
+            -- Ждём завершения рыбалки
+            while (State.isFishing or State.isInMinigame or State.isWaitingResult) and CONFIG.AUTO_FISH_ENABLED do
+                task.wait(0.2)
+            end
+            
+            -- Задержка перед следующей рыбалкой
+            task.wait(CONFIG.FISH_DELAY)
+        else
+            setStatus("Idle")
         end
     end
-
-    local myZone = checkZone(rootPart.Position)
-    while typeof(myZone) == "number" do
-        local data = islandZones[myZone]
-        for i = #data.Path, 1, -1 do
-            if not isFarming or humanoid.Health <= 0 then break end
-            flyTo(data.Path[i], false, 6)
-        end
-        myZone = data.Parent
-    end
-    activeEggs[obj] = nil
 end
 
-task.spawn(function()
-    while true do
-        if isFarming and humanoid and humanoid.Health > 0 then
-            local o, p = getBestEgg()
-            if o and p then huntTarget(o, p) else task.wait(0.5) end
-        else
-            task.wait(0.5)
+-- ==================== ГОРЯЧИЕ КЛАВИШИ ====================
+
+local function toggleAutoFish()
+    CONFIG.AUTO_FISH_ENABLED = not CONFIG.AUTO_FISH_ENABLED
+    
+    if not CONFIG.AUTO_FISH_ENABLED then
+        -- Очищаем состояние
+        if State.minigameConnection then
+            State.minigameConnection:Disconnect()
+            State.minigameConnection = nil
         end
-        task.wait(0.05)
+        if State.autoClickConnection then
+            State.autoClickConnection:Disconnect()
+            State.autoClickConnection = nil
+        end
+        State.isFishing = false
+        State.isInMinigame = false
+        State.isMinigameStarted = false
+        State.isWaitingResult = false
+        setStatus("Idle")
+    else
+        setStatus("Starting...")
+    end
+    
+    updateUI()
+end
+
+local function toggleAutoSell()
+    CONFIG.AUTO_SELL_ENABLED = not CONFIG.AUTO_SELL_ENABLED
+    updateUI()
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.F6 then
+        toggleAutoFish()
+    elseif input.KeyCode == Enum.KeyCode.F7 then
+        toggleAutoSell()
+    elseif input.KeyCode == Enum.KeyCode.F8 then
+        teleportToSpot()
     end
 end)
 
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.P then
-        isFarming = not isFarming
-        updateVisuals()
-        if not isFarming then
-            local ap, ao = rootPart:FindFirstChild("FlyPos"), rootPart:FindFirstChild("FlyOri")
-            if ap then ap.Enabled = false end
-            if ao then ao.Enabled = false end
-            humanoid.PlatformStand = false
-            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end
-    end
-end)
+fishBtn.MouseButton1Click:Connect(toggleAutoFish)
+sellBtn.MouseButton1Click:Connect(toggleAutoSell)
+tpBtn.MouseButton1Click:Connect(teleportToSpot)
 
-updateVisuals()
+-- ==================== ЗАПУСК ====================
+
+updateUI()
+task.spawn(mainLoop)
+
+print("[Auto Fish] Loaded! Press F6 to toggle.")
+print("[Auto Fish] F6 = Auto Fish | F7 = Auto Sell | F8 = Teleport")
