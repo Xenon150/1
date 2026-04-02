@@ -1,539 +1,480 @@
 --[[
-    AUTO FISHING SCRIPT v2 (FIXED)
-    F6 - Авто-рыбалка ON/OFF
-    F7 - Авто-продажа ON/OFF  
-    F8 - Телепорт к точке рыбалки
+    AUTO FISHING v3 - Эмулирует действия игрока через UI
+    F6 - Авто-рыбалка
+    F8 - Телепорт к точке
 ]]
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Ждём загрузки всех модулей
-local Packets = ReplicatedStorage:WaitForChild("Packets", 30)
-local Modules = ReplicatedStorage:WaitForChild("Modules", 30)
-local Storage = ReplicatedStorage:WaitForChild("Storage", 30)
-
-local FishingPacket = require(Packets:WaitForChild("Fishing", 30))
-local Utility = require(Modules:WaitForChild("Utility", 30))
-
--- Ждём Replica правильно
-local Replica = nil
-local function waitForReplica()
-    local maxWait = 30
-    local waited = 0
-    while waited < maxWait do
-        local success, result = pcall(function()
-            return Utility.Replica.WaitForReplica(LocalPlayer)
-        end)
-        if success and result and result.Data then
-            Replica = result
-            return true
-        end
-        task.wait(1)
-        waited = waited + 1
-    end
-    return false
-end
-
-if not waitForReplica() then
-    warn("[Auto Fish] Failed to load Replica data. Retrying...")
-    task.wait(5)
-    if not waitForReplica() then
-        warn("[Auto Fish] Could not load. Aborting.")
-        return
-    end
-end
-
--- FishStore загружаем безопасно
-local FishStore = nil
-pcall(function()
-    FishStore = require(Storage:WaitForChild("FishStore", 30))
-end)
-
-local FishingPoints = workspace:WaitForChild("Map", 30)
-    :WaitForChild("Miscs", 30)
-    :WaitForChild("FishingPoints", 30)
-
-print("[Auto Fish] All modules loaded successfully!")
+local FishingPoints = workspace:WaitForChild("Map"):WaitForChild("Miscs"):WaitForChild("FishingPoints")
 
 -- ==================== НАСТРОЙКИ ====================
-local CONFIG = {
-    AUTO_FISH_ENABLED = false,
-    AUTO_SELL_ENABLED = false,
-    AUTO_CLICK_SPEED = 0.11,
-    FISH_DELAY = 2.5,
-    SELL_KEEP_EPIC = true,
-    SELL_KEEP_RARE = false,
-    MAX_INVENTORY_BEFORE_SELL = 0.85,
-}
-
--- ==================== СОСТОЯНИЕ ====================
-local State = {
-    isFishing = false,
-    isInMinigame = false,
-    isMinigameStarted = false,
-    isWaitingResult = false,
-    fishProgress = 0.5,
-    catchProgress = 0,
-    gameParams = nil,
-    endingTime = 0,
-    catchValue = 0,
-    catchGoal = 0,
-    minigameConnection = nil,
-    autoClickConnection = nil,
-}
-
+local AUTO_ENABLED = false
+local CLICK_INTERVAL = 0.12
+local FISH_DELAY = 3.0
 local catchCount = 0
-local mg_targetPos = 0
-local mg_currentPos = 0
-local mg_nextMoveTime = 0
-local mgRandom = Random.new()
-local lastClickTime = 0
 
 -- ==================== GUI ====================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AutoFishGui"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local sg = Instance.new("ScreenGui")
+sg.Name = "AF3"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = PlayerGui
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 220, 0, 185)
-mainFrame.Position = UDim2.new(0, 10, 0.5, -92)
-mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-mainFrame.BackgroundTransparency = 0.1
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 180, 0, 100)
+frame.Position = UDim2.new(0, 10, 0.5, -50)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+frame.BackgroundTransparency = 0.1
+frame.BorderSizePixel = 0
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+local s = Instance.new("UIStroke", frame)
+s.Color = Color3.fromRGB(60, 120, 255)
+s.Thickness = 2
 
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
-local stk = Instance.new("UIStroke", mainFrame)
-stk.Color = Color3.fromRGB(60, 120, 255)
-stk.Thickness = 2
+local titleL = Instance.new("TextLabel")
+titleL.Size = UDim2.new(1, 0, 0, 24)
+titleL.BackgroundColor3 = Color3.fromRGB(25, 40, 80)
+titleL.BackgroundTransparency = 0.2
+titleL.TextColor3 = Color3.fromRGB(100, 180, 255)
+titleL.Font = Enum.Font.GothamBold
+titleL.TextSize = 12
+titleL.Text = "🐟 Auto Fish v3"
+titleL.Parent = frame
+Instance.new("UICorner", titleL).CornerRadius = UDim.new(0, 8)
 
--- Заголовок
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 28)
-title.BackgroundColor3 = Color3.fromRGB(25, 40, 80)
-title.BackgroundTransparency = 0.2
-title.TextColor3 = Color3.fromRGB(100, 180, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 13
-title.Text = "🐟 Auto Fishing v2"
-title.Parent = mainFrame
-Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+local statusL = Instance.new("TextLabel")
+statusL.Size = UDim2.new(1, -8, 0, 16)
+statusL.Position = UDim2.new(0, 4, 0, 28)
+statusL.BackgroundTransparency = 1
+statusL.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusL.Font = Enum.Font.Gotham
+statusL.TextSize = 10
+statusL.TextXAlignment = Enum.TextXAlignment.Left
+statusL.Text = "Status: Ready"
+statusL.Parent = frame
 
--- Статус
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -10, 0, 18)
-statusLabel.Position = UDim2.new(0, 5, 0, 32)
-statusLabel.BackgroundTransparency = 1
-statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 10
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.Text = "Status: Ready"
-statusLabel.Parent = mainFrame
+local fishB = Instance.new("TextButton")
+fishB.Size = UDim2.new(0.9, 0, 0, 24)
+fishB.Position = UDim2.new(0.05, 0, 0, 48)
+fishB.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+fishB.TextColor3 = Color3.fromRGB(255, 100, 100)
+fishB.Font = Enum.Font.GothamBold
+fishB.TextSize = 11
+fishB.Text = "[F6] OFF"
+fishB.Parent = frame
+Instance.new("UICorner", fishB).CornerRadius = UDim.new(0, 6)
 
-local function makeButton(text, yPos, parent)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.9, 0, 0, 26)
-    btn.Position = UDim2.new(0.05, 0, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
-    btn.TextColor3 = Color3.fromRGB(255, 100, 100)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 11
-    btn.Text = text
-    btn.Parent = parent
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    return btn
-end
-
-local fishBtn = makeButton("[F6] Auto Fish: OFF", 55, mainFrame)
-local sellBtn = makeButton("[F7] Auto Sell: OFF", 87, mainFrame)
-local tpBtn = makeButton("[F8] TP to Spot", 119, mainFrame)
-tpBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
-
-local countLabel = Instance.new("TextLabel")
-countLabel.Size = UDim2.new(1, -10, 0, 16)
-countLabel.Position = UDim2.new(0, 5, 0, 150)
-countLabel.BackgroundTransparency = 1
-countLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
-countLabel.Font = Enum.Font.Gotham
-countLabel.TextSize = 10
-countLabel.TextXAlignment = Enum.TextXAlignment.Left
-countLabel.Text = "Caught: 0"
-countLabel.Parent = mainFrame
-
-local invLabel = Instance.new("TextLabel")
-invLabel.Size = UDim2.new(1, -10, 0, 14)
-invLabel.Position = UDim2.new(0, 5, 0, 167)
-invLabel.BackgroundTransparency = 1
-invLabel.TextColor3 = Color3.fromRGB(200, 200, 150)
-invLabel.Font = Enum.Font.Gotham
-invLabel.TextSize = 9
-invLabel.TextXAlignment = Enum.TextXAlignment.Left
-invLabel.Text = "Inventory: ?/?"
-invLabel.Parent = mainFrame
+local countL = Instance.new("TextLabel")
+countL.Size = UDim2.new(1, -8, 0, 14)
+countL.Position = UDim2.new(0, 4, 0, 78)
+countL.BackgroundTransparency = 1
+countL.TextColor3 = Color3.fromRGB(150, 255, 150)
+countL.Font = Enum.Font.Gotham
+countL.TextSize = 10
+countL.TextXAlignment = Enum.TextXAlignment.Left
+countL.Text = "Caught: 0"
+countL.Parent = frame
 
 -- Перетаскивание
-local dragging, dragStart, startPos = false, nil, nil
-title.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
+local dr, ds, sp = false, nil, nil
+titleL.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+        dr = true; ds = i.Position; sp = frame.Position
     end
 end)
-title.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
-    end
+titleL.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then dr = false end
 end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local d = input.Position - dragStart
-        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+UserInputService.InputChanged:Connect(function(i)
+    if dr and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local d = i.Position - ds
+        frame.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
     end
 end)
 
--- ==================== ФУНКЦИИ ====================
+-- ==================== ПОИСК UI ЭЛЕМЕНТОВ ИГРЫ ====================
 
 local function setStatus(t)
-    statusLabel.Text = "Status: " .. t
-end
-
-local function getInventoryCount()
-    local count = 0
-    local success, data = pcall(function() return Replica.Data.FishInventory end)
-    if success and data then
-        for _ in pairs(data) do count = count + 1 end
-    end
-    return count
-end
-
-local function getInventorySize()
-    local success, size = pcall(function() return Replica.Data.FishInventorySize end)
-    if success and size then return size end
-    return 10
+    statusL.Text = "Status: " .. t
 end
 
 local function updateUI()
-    if CONFIG.AUTO_FISH_ENABLED then
-        fishBtn.Text = "[F6] Auto Fish: ON"
-        fishBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
+    if AUTO_ENABLED then
+        fishB.Text = "[F6] ON"
+        fishB.TextColor3 = Color3.fromRGB(100, 255, 100)
     else
-        fishBtn.Text = "[F6] Auto Fish: OFF"
-        fishBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+        fishB.Text = "[F6] OFF"
+        fishB.TextColor3 = Color3.fromRGB(255, 100, 100)
     end
-    if CONFIG.AUTO_SELL_ENABLED then
-        sellBtn.Text = "[F7] Auto Sell: ON"
-        sellBtn.TextColor3 = Color3.fromRGB(100, 255, 100)
-    else
-        sellBtn.Text = "[F7] Auto Sell: OFF"
-        sellBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-    end
-    countLabel.Text = string.format("Caught: %d", catchCount)
-    
-    local ic = getInventoryCount()
-    local is = getInventorySize()
-    invLabel.Text = string.format("Inventory: %d/%d", ic, is)
+    countL.Text = "Caught: " .. catchCount
 end
 
+-- Ищем FishUI модуль через клиентские скрипты
+local function findFishUIScript()
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if desc:IsA("LocalScript") and desc.Name == "Fishing" then
+            return desc
+        end
+    end
+    return nil
+end
+
+-- Находим кнопку рыбалки в UI игры
+local function findGameButton(name)
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if desc:IsA("TextButton") or desc:IsA("ImageButton") then
+            if desc.Name == name then
+                return desc
+            end
+        end
+    end
+    return nil
+end
+
+-- Ищем все TextButton и ImageButton с определённым текстом
+local function findButtonByText(searchText)
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if (desc:IsA("TextButton") or desc:IsA("TextLabel")) then
+            if desc.Text and string.find(string.lower(desc.Text), string.lower(searchText)) then
+                if desc:IsA("TextButton") then
+                    return desc
+                end
+                -- Проверяем родителя
+                local parent = desc.Parent
+                if parent and (parent:IsA("TextButton") or parent:IsA("ImageButton")) then
+                    return parent
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Ближайшая точка рыбалки
 local function findNearestSpot()
     local char = LocalPlayer.Character
     if not char then return nil, 999 end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil, 999 end
     
-    local nearest, nearestDist = nil, math.huge
+    local nearest, nd = nil, math.huge
     for _, spot in pairs(FishingPoints:GetChildren()) do
         if spot:IsA("Model") and not spot:GetAttribute("occupied") then
-            local dist = (hrp.Position - spot:GetPivot().Position).Magnitude
-            if dist < nearestDist then
-                nearest = spot
-                nearestDist = dist
-            end
+            local d = (hrp.Position - spot:GetPivot().Position).Magnitude
+            if d < nd then nearest = spot; nd = d end
         end
     end
-    return nearest, nearestDist
+    return nearest, nd
 end
 
 local function teleportToSpot()
     local spot = findNearestSpot()
-    if not spot then
-        setStatus("No spot found!")
-        return
-    end
+    if not spot then setStatus("No spot!"); return end
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    
-    local target = spot:GetAttribute("plrLoc")
-    if target then
-        hrp.CFrame = target
-    else
-        hrp.CFrame = spot:GetPivot() + Vector3.new(0, 3, 0)
-    end
+    local t = spot:GetAttribute("plrLoc")
+    hrp.CFrame = t or (spot:GetPivot() + Vector3.new(0, 3, 0))
     setStatus("Teleported!")
 end
 
-local function cleanupMinigame()
-    if State.minigameConnection then
-        State.minigameConnection:Disconnect()
-        State.minigameConnection = nil
-    end
-    if State.autoClickConnection then
-        State.autoClickConnection:Disconnect()
-        State.autoClickConnection = nil
-    end
-    State.isInMinigame = false
-    State.isMinigameStarted = false
-end
+-- ==================== ВИРТУАЛЬНЫЙ КЛИК ====================
 
--- ==================== МИНИ-ИГРА ====================
-
-local function simulateMinigame(dt)
-    if not State.isMinigameStarted or not State.gameParams then return end
-    local p = State.gameParams
-    local now = tick()
-    
-    if now >= mg_nextMoveTime then
-        mg_nextMoveTime = now + mgRandom:NextNumber(p.minMoveInterval, p.maxMoveInterval)
-        local newT = mg_targetPos + (math.random() * 2 - 1) * (p.moveRange or 0.1) * 0.75
-        mg_targetPos = math.clamp(newT, 0, 1 - p.successWidth)
-    end
-    
-    mg_currentPos = mg_currentPos + (mg_targetPos - mg_currentPos) * p.moveSpeed * dt
-    mg_currentPos = math.clamp(mg_currentPos, 0, 1 - p.successWidth)
-    
-    local successEnd = mg_currentPos + p.successWidth
-    
-    State.fishProgress = math.clamp(State.fishProgress - p.decayRate * dt, 0, 1)
-    
-    local inZone = State.fishProgress >= mg_currentPos and State.fishProgress <= successEnd
-    if inZone then
-        State.catchProgress = math.clamp(State.catchProgress + State.catchValue * p.catchFillScale * dt, 0, 100)
-    else
-        State.catchProgress = math.clamp(State.catchProgress - State.catchValue * p.catchDecayScale * dt, 0, 100)
-    end
-    
-    if State.endingTime < now then
-        local won = State.catchProgress / 100 > State.catchGoal
-        cleanupMinigame()
-        FishingPacket.gameResult.send(won)
-        State.isWaitingResult = true
-        setStatus(won and "Won!" or "Lost!")
-    end
-end
-
-local function autoClick()
-    if not State.isMinigameStarted or not State.gameParams then return end
-    local now = tick()
-    if now - lastClickTime < CONFIG.AUTO_CLICK_SPEED then return end
-    
-    local p = State.gameParams
-    local target = mg_currentPos + p.successWidth / 2
-    
-    if State.fishProgress < target + 0.05 then
-        lastClickTime = now
-        State.fishProgress = math.clamp(State.fishProgress + p.clickIncrease, 0, 1)
-    end
-end
-
--- ==================== СЛУШАТЕЛИ ====================
-
-FishingPacket.beginFishing.listen(function(text)
-    if CONFIG.AUTO_FISH_ENABLED then
-        State.isFishing = true
-        State.isWaitingResult = false
-        setStatus("Waiting for bite...")
-    end
-end)
-
-FishingPacket.playGame.listen(function(params)
-    if not CONFIG.AUTO_FISH_ENABLED then return end
-    
-    State.gameParams = params
-    State.isInMinigame = true
-    
-    local initPos = math.max(0, 0.5 - params.successWidth / 2)
-    mg_currentPos = initPos
-    mg_targetPos = initPos
-    mg_nextMoveTime = tick() + mgRandom:NextNumber(params.minMoveInterval, params.maxMoveInterval)
-    
-    local duration = tonumber(params.endTimestamp) - workspace:GetServerTimeNow()
-    State.endingTime = duration + tick()
-    State.fishProgress = 0.5
-    State.catchProgress = 0
-    State.catchValue = 100 / math.max(duration - 1.5, 1)
-    State.catchGoal = params.catchGoal
-    
-    setStatus("Minigame!")
-    
-    task.delay(1.5, function()
-        if not CONFIG.AUTO_FISH_ENABLED then return end
-        State.isMinigameStarted = true
-        
-        cleanupMinigame()
-        State.isMinigameStarted = true
-        State.isInMinigame = true
-        State.minigameConnection = RunService.RenderStepped:Connect(simulateMinigame)
-        State.autoClickConnection = RunService.RenderStepped:Connect(autoClick)
+local function virtualClick(x, y)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+        task.wait(0.02)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
     end)
-end)
+end
 
-FishingPacket.reward.listen(function(data)
-    if not CONFIG.AUTO_FISH_ENABLED then return end
+local function clickButton(button)
+    if not button or not button.Parent then return false end
+    if not button.Visible then return false end
     
-    State.isFishing = false
-    State.isWaitingResult = false
-    cleanupMinigame()
-    
-    if data.rewardType ~= "Failed" then
-        catchCount = catchCount + 1
-        local name = "fish"
-        if data.rewardInfo then
-            pcall(function()
-                local info = FishStore.getFishInfo(data.rewardInfo.id)
-                name = info.name or data.rewardInfo.id
-            end)
+    -- Проверяем видимость всех родителей
+    local current = button.Parent
+    while current and current ~= PlayerGui do
+        if current:IsA("GuiObject") and not current.Visible then
+            return false
         end
-        setStatus("Caught: " .. name)
-    else
-        setStatus("Failed!")
+        current = current.Parent
     end
-    updateUI()
-end)
+    
+    local pos = button.AbsolutePosition
+    local size = button.AbsoluteSize
+    local cx = pos.X + size.X / 2
+    local cy = pos.Y + size.Y / 2
+    
+    virtualClick(cx, cy)
+    return true
+end
 
-FishingPacket.quit.listen(function()
-    State.isFishing = false
-    State.isWaitingResult = false
-    cleanupMinigame()
-end)
+-- ==================== ОПРЕДЕЛЕНИЕ СОСТОЯНИЯ ИГРЫ ====================
 
--- Авто-подтверждение продажи
-FishingPacket.sellFish.listen(function()
-    if CONFIG.AUTO_SELL_ENABLED then
-        task.wait(0.3)
-        pcall(function()
-            FishingPacket.sellConfirm.send(true)
-        end)
-    end
-end)
-
--- ==================== АВТО-ПРОДАЖА ====================
-
-local function autoSell()
-    if not CONFIG.AUTO_SELL_ENABLED then return end
-    if not Replica or not Replica.Data then return end
-    
-    local inv = Replica.Data.FishInventory
-    if not inv then return end
-    
-    local count = getInventoryCount()
-    local size = getInventorySize()
-    
-    if count / size < CONFIG.MAX_INVENTORY_BEFORE_SELL then return end
-    
-    setStatus("Selling...")
-    
-    for uid, fish in pairs(inv) do
-        if not CONFIG.AUTO_SELL_ENABLED then break end
-        
-        local shouldKeep = false
-        pcall(function()
-            if FishStore then
-                local info = FishStore.getFishInfo(fish.id)
-                if CONFIG.SELL_KEEP_EPIC and info.tier == "epic" then shouldKeep = true end
-                if CONFIG.SELL_KEEP_RARE and info.tier == "rare" then shouldKeep = true end
+-- Проверяем состояние через UI элементы
+local function isInFishingUI()
+    -- Ищем характерные элементы UI рыбалки
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if desc:IsA("TextLabel") then
+            local txt = desc.Text or ""
+            if string.find(txt, "Click!") or string.find(txt, "Reeling") or 
+               string.find(txt, "Waiting") or string.find(txt, "casting") then
+                if desc.Visible ~= false then
+                    return true
+                end
             end
-        end)
-        
-        if not shouldKeep then
-            pcall(function()
-                FishingPacket.sellFish.send(uid)
-            end)
-            task.wait(0.5)
         end
     end
-    task.wait(1)
+    return false
+end
+
+local function isMinigameActive()
+    -- Ищем прогресс-бар мини-игры
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if desc:IsA("Frame") or desc:IsA("CanvasGroup") then
+            if desc.Name == "MinigameBar" or desc.Name == "ProgressBar" or 
+               desc.Name == "CatchBar" or desc.Name == "FishBar" then
+                if desc.Visible ~= false and desc.Parent and desc.Parent.Visible ~= false then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function isResultScreen()
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if desc:IsA("TextLabel") then
+            local txt = string.lower(desc.Text or "")
+            if (string.find(txt, "caught") or string.find(txt, "failed") or 
+                string.find(txt, "reward") or string.find(txt, "you got")) then
+                if desc.Visible ~= false then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
 -- ==================== ГЛАВНЫЙ ЦИКЛ ====================
 
+local autoClickConn = nil
+local isAutoClicking = false
+
+local function startAutoClick()
+    if isAutoClicking then return end
+    isAutoClicking = true
+    
+    autoClickConn = RunService.RenderStepped:Connect(function()
+        if not AUTO_ENABLED or not isAutoClicking then
+            if autoClickConn then autoClickConn:Disconnect() end
+            isAutoClicking = false
+            return
+        end
+        
+        -- Кликаем в центр экрана для мини-игры
+        local viewport = workspace.CurrentCamera.ViewportSize
+        virtualClick(viewport.X / 2, viewport.Y / 2)
+    end)
+end
+
+local function stopAutoClick()
+    isAutoClicking = false
+    if autoClickConn then
+        autoClickConn:Disconnect()
+        autoClickConn = nil
+    end
+end
+
+-- Ищем кнопку "Fish" в UI игры
+local function findAndClickFishButton()
+    -- Метод 1: Ищем по Callback свойству через fireClick
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+            local txt = ""
+            pcall(function() txt = string.lower(desc.Text or "") end)
+            
+            if string.find(txt, "fish") and not string.find(txt, "auto") then
+                -- Проверяем что все родители видимы
+                local vis = true
+                local p = desc.Parent
+                while p and p ~= PlayerGui do
+                    if p:IsA("GuiObject") then
+                        pcall(function()
+                            if not p.Visible then vis = false end
+                        end)
+                    end
+                    p = p.Parent
+                end
+                
+                if vis then
+                    clickButton(desc)
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- Метод 2: firesignal на все видимые кнопки с рыбалкой
+    return false
+end
+
+local function findAndClickResultButton()
+    for _, desc in pairs(PlayerGui:GetDescendants()) do
+        if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+            local txt = ""
+            pcall(function() txt = string.lower(desc.Text or "") end)
+            
+            if string.find(txt, "ok") or string.find(txt, "continue") or 
+               string.find(txt, "close") or string.find(txt, "next") then
+                local vis = true
+                local p = desc.Parent
+                while p and p ~= PlayerGui do
+                    if p:IsA("GuiObject") then
+                        pcall(function()
+                            if not p.Visible then vis = false end
+                        end)
+                    end
+                    p = p.Parent
+                end
+                if vis then
+                    clickButton(desc)
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- ==================== ОСНОВНОЙ АВТОМАТИЗАТОР ====================
+
 task.spawn(function()
-    while task.wait(0.5) do
-        if CONFIG.AUTO_FISH_ENABLED then
-            -- Обновляем UI
-            updateUI()
+    while true do
+        task.wait(0.3)
+        
+        if not AUTO_ENABLED then
+            stopAutoClick()
+            continue
+        end
+        
+        -- Проверяем расстояние до точки
+        local spot, dist = findNearestSpot()
+        if not spot or dist > 12 then
+            setStatus("Get closer to fishing spot!")
+            stopAutoClick()
+            task.wait(1)
+            continue
+        end
+        
+        -- Определяем текущее состояние
+        local fishing = false
+        local minigame = false
+        local result = false
+        
+        -- Сканируем UI для определения состояния
+        for _, desc in pairs(PlayerGui:GetDescendants()) do
+            if not desc:IsA("GuiObject") then continue end
             
-            if State.isFishing or State.isInMinigame or State.isWaitingResult then
-                -- Ждём завершения текущей рыбалки
-                continue
-            end
-            
-            -- Авто-продажа
-            pcall(autoSell)
-            
-            -- Ищем точку
-            local spot, dist = findNearestSpot()
-            if not spot or dist > 10 then
-                setStatus("Move closer to fishing spot!")
-                task.wait(1)
-                continue
-            end
-            
-            local spotId = spot:GetAttribute("spotId")
-            if not spotId then
-                setStatus("Invalid spot")
-                task.wait(1)
-                continue
-            end
-            
-            -- Забрасываем
-            setStatus("Casting...")
+            local visible = true
             pcall(function()
-                FishingPacket.start.send(spotId)
+                if desc.Visible == false then visible = false end
+            end)
+            if not visible then continue end
+            
+            local txt = ""
+            pcall(function()
+                if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                    txt = string.lower(desc.Text or "")
+                end
             end)
             
-            -- Ждём начала
-            local t = tick()
-            while not State.isFishing and tick() - t < 8 do
-                task.wait(0.1)
+            -- Проверяем мини-игру по наличию прогресс-элементов
+            if desc.Name and (string.find(string.lower(desc.Name), "catch") or 
+                             string.find(string.lower(desc.Name), "minigame") or
+                             string.find(string.lower(desc.Name), "progress")) then
+                minigame = true
             end
             
-            if not State.isFishing then
-                setStatus("Timeout, retrying...")
-                task.wait(CONFIG.FISH_DELAY)
-                continue
+            if string.find(txt, "waiting") or string.find(txt, "reeling") then
+                fishing = true
             end
             
-            -- Ждём завершения
-            while (State.isFishing or State.isInMinigame or State.isWaitingResult) 
-                  and CONFIG.AUTO_FISH_ENABLED do
-                task.wait(0.2)
+            if string.find(txt, "caught") or string.find(txt, "failed") then
+                result = true
+            end
+        end
+        
+        if result then
+            setStatus("Result screen...")
+            stopAutoClick()
+            task.wait(2)
+            -- Кликаем чтобы закрыть
+            local viewport = workspace.CurrentCamera.ViewportSize
+            virtualClick(viewport.X / 2, viewport.Y / 2)
+            task.wait(1)
+            findAndClickResultButton()
+            task.wait(FISH_DELAY)
+            
+        elseif minigame then
+            setStatus("Minigame - clicking!")
+            -- Авто-клик для мини-игры
+            if not isAutoClicking then
+                startAutoClick()
             end
             
-            task.wait(CONFIG.FISH_DELAY)
+        elseif fishing then
+            setStatus("Waiting for bite...")
+            stopAutoClick()
+            
         else
-            updateUI()
+            -- Ничего не происходит - пробуем начать рыбалку
+            stopAutoClick()
+            setStatus("Starting fish...")
+            
+            -- Пробуем нажать кнопку рыбалки
+            local clicked = findAndClickFishButton()
+            
+            if not clicked then
+                -- Альтернативный метод - firesignal
+                setStatus("Looking for fish button...")
+            end
+            
+            task.wait(FISH_DELAY)
+        end
+    end
+end)
+
+-- Отдельный цикл авто-клика для мини-игры с правильным интервалом  
+task.spawn(function()
+    while true do
+        task.wait(CLICK_INTERVAL)
+        if AUTO_ENABLED and isAutoClicking then
+            local viewport = workspace.CurrentCamera.ViewportSize
+            virtualClick(viewport.X / 2, viewport.Y / 2)
         end
     end
 end)
 
 -- ==================== КЛАВИШИ ====================
 
-local function toggleFish()
-    CONFIG.AUTO_FISH_ENABLED = not CONFIG.AUTO_FISH_ENABLED
-    if not CONFIG.AUTO_FISH_ENABLED then
-        cleanupMinigame()
-        State.isFishing = false
-        State.isWaitingResult = false
+local function toggle()
+    AUTO_ENABLED = not AUTO_ENABLED
+    if not AUTO_ENABLED then
+        stopAutoClick()
         setStatus("Stopped")
     else
         setStatus("Starting...")
@@ -541,23 +482,16 @@ local function toggleFish()
     updateUI()
 end
 
-local function toggleSell()
-    CONFIG.AUTO_SELL_ENABLED = not CONFIG.AUTO_SELL_ENABLED
-    updateUI()
-end
-
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if input.KeyCode == Enum.KeyCode.F6 then toggleFish()
-    elseif input.KeyCode == Enum.KeyCode.F7 then toggleSell()
+    if input.KeyCode == Enum.KeyCode.F6 then toggle()
     elseif input.KeyCode == Enum.KeyCode.F8 then teleportToSpot()
     end
 end)
 
-fishBtn.MouseButton1Click:Connect(toggleFish)
-sellBtn.MouseButton1Click:Connect(toggleSell)
-tpBtn.MouseButton1Click:Connect(teleportToSpot)
+fishB.MouseButton1Click:Connect(toggle)
 
 updateUI()
-setStatus("Ready! Press F6")
-print("[Auto Fish v2] Loaded! F6=Fish F7=Sell F8=TP")
+setStatus("Ready! F6 to start")
+print("[AutoFish v3] Loaded! F6=Toggle F8=TP")
+print("[AutoFish v3] Stand near fishing spot and press F6")
