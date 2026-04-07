@@ -1,79 +1,65 @@
--- Конфигурация
-local MAX_BUFFER_SIZE = 500 -- Сколько строк хранить перед копированием (чтобы не лагало)
+local setclipboard = setclipboard or print
 local logBuffer = {}
-local LOG_HEADER = "--- [RE REAL-TIME LOG START] ---\n"
+local MAX_LOGS = 100
 
--- Функция для записи в буфер и клипборд
-local function logToClipboard(text)
-    local timestamp = os.date("%H:%M:%S")
-    local entry = string.format("[%s] %s", timestamp, text)
+-- Список сервисов, которые мы ИГНОРИРУЕМ (они создают 99% лагов)
+local Blacklist = {
+    ["RunService"] = true,
+    ["LogService"] = true,
+    ["TextChatService"] = true,
+    ["CoreGui"] = true,
+    ["CorePackages"] = true,
+    ["Lighting"] = true,
+    ["Selection"] = true
+}
+
+local function log(text)
+    local entry = string.format("[%s] %s", os.date("%X"), text)
     table.insert(logBuffer, entry)
+    print(entry)
     
-    print(entry) -- Дублируем в консоль для удобства
-
-    if #logBuffer >= MAX_BUFFER_SIZE then
-        local fullLog = LOG_HEADER .. table.concat(logBuffer, "\n")
-        if setclipboard then
-            setclipboard(fullLog)
-            warn("!!! BUFFER FULL: Logs copied to clipboard !!!")
-        end
-        logBuffer = {} -- Очищаем буфер после копирования
+    if #logBuffer >= MAX_LOGS then
+        setclipboard(table.concat(logBuffer, "\n"))
+        logBuffer = {}
+        warn("!!! Logs saved to clipboard !!!")
     end
 end
 
--- 1. ОТСЛЕЖИВАНИЕ НОВЫХ ОБЪЕКТОВ
-game.DescendantAdded:Connect(function(obj)
-    pcall(function()
-        logToClipboard(string.format("NEW INSTANCE: %s | Class: %s | Parent: %s", obj:GetFullName(), obj.ClassName, tostring(obj.Parent)))
-    end)
-end)
+-- 1. СЛЕЖИМ ТОЛЬКО ЗА ВАЖНЫМИ ОБЪЕКТАМИ (Workspace и ReplicatedStorage)
+local function safeTrack(obj)
+    local root = obj:GetFullName():split(".")[1]
+    if Blacklist[root] then return end
+    
+    -- Логируем только если создано что-то подозрительное
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("ModuleScript") or obj:IsA("ValueBase") then
+        log("INTERESTING OBJ: " .. obj.ClassName .. " | Path: " .. obj:GetFullName())
+    end
+end
 
--- 2. ОТСЛЕЖИВАНИЕ УДАЛЕНИЯ
-game.DescendantRemoving:Connect(function(obj)
-    pcall(function()
-        logToClipboard(string.format("REMOVED: %s (from %s)", obj.Name, tostring(obj.Parent)))
-    end)
-end)
+game.DescendantAdded:Connect(safeTrack)
 
--- 3. ХУК МЕТАТАБЛИЦЫ (Слежка за изменением свойств скриптами)
--- Это "сердце" реверс-инжиниринга. Мы видим, когда скрипт меняет свойство.
+-- 2. УМНЫЙ ХУК (Фильтруем свойства)
 local mt = getrawmetatable(game)
 local oldNewIndex = mt.__newindex
 setreadonly(mt, false)
 
 mt.__newindex = newcclosure(function(t, k, v)
-    -- Фильтруем шум (не логируем изменения в GUI игрока, если их слишком много)
-    if not tostring(t):find("PlayerGui") then
-        local callingScript = getfenv(2).script -- Пытаемся определить, какой скрипт вызвал изменение
-        local scriptPath = callingScript and callingScript:GetFullName() or "Unknown/Internal"
-        
-        logToClipboard(string.format("PROPERTY CHANGE: %s.%s = %s | BY SCRIPT: %s", tostring(t), tostring(k), tostring(v), scriptPath))
+    local path = tostring(t)
+    
+    -- Логируем изменения только если это НЕ визуальные свойства
+    -- Игнорируем CFrame, Position, Orientation (это источник лагов)
+    local ignoredProps = {CFrame = true, Position = true, Orientation = true, Rotation = true, TimeOfDay = true}
+    
+    if not ignoredProps[k] and not Blacklist[path] then
+        -- Логируем только если меняются значения (Value) или конфиги
+        if k == "Value" or t:IsA("RemoteEvent") or t:IsA("ModuleScript") then
+            log(string.format("PROP CHANGE: %s.%s = %s", path, tostring(k), tostring(v)))
+        end
     end
+    
     return oldNewIndex(t, k, v)
 end)
 
 setreadonly(mt, true)
 
--- 4. ОТСЛЕЖИВАНИЕ АТРИБУТОВ (Часто используется в новых играх)
-local function trackAttributes(obj)
-    obj.AttributeChanged:Connect(function(attr)
-        logToClipboard(string.format("ATTRIBUTE CHANGE: %s | Attr: %s | Value: %s", obj:GetFullName(), attr, tostring(obj:GetAttribute(attr))))
-    end)
-end
-
--- Применяем трекер атрибутов ко всем существующим объектам (осторожно, может быть ресурсоемко)
-for _, v in ipairs(game:GetDescendants()) do
-    pcall(trackAttributes, v)
-end
-
--- 5. ГОРЯЧАЯ КЛАВИША ДЛЯ ПРИНУДИТЕЛЬНОГО КОПИРОВАНИЯ
-local UIS = game:GetService("UserInputService")
-UIS.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
-        local currentLog = LOG_HEADER .. table.concat(logBuffer, "\n")
-        setclipboard(currentLog)
-        warn("--- LOG MANUALLY COPIED TO CLIPBOARD ---")
-    end
-end)
-
-print("--- [MONITORING ACTIVE: Press RightControl to Copy Logs] ---")
+log("--- SILENT MONITORING STARTED (FPS OPTIMIZED) ---")
