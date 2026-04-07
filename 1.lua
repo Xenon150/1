@@ -1,39 +1,5 @@
 local Luxt1 = {}
 
--- Создание системы частиц
-local function CreateParticles(parent)
-    local ParticlesFrame = Instance.new("Frame")
-    ParticlesFrame.Name = "ParticlesFrame"
-    ParticlesFrame.Parent = parent
-    ParticlesFrame.BackgroundTransparency = 1
-    ParticlesFrame.Size = UDim2.new(1, 0, 1, 0)
-    ParticlesFrame.ZIndex = 1
-    
-    for i = 1, 20 do
-        local Particle = Instance.new("Frame")
-        Particle.Parent = ParticlesFrame
-        Particle.BackgroundColor3 = Color3.fromRGB(153, 255, 238)
-        Particle.BackgroundTransparency = 0.7
-        Particle.Size = UDim2.new(0, math.random(2, 4), 0, math.random(2, 4))
-        Particle.Position = UDim2.new(math.random(), 0, math.random(), 0)
-        
-        local Corner = Instance.new("UICorner")
-        Corner.CornerRadius = UDim.new(1, 0)
-        Corner.Parent = Particle
-        
-        -- Анимация частиц
-        spawn(function()
-            while wait(math.random(2, 5)) do
-                local newPos = UDim2.new(math.random(), 0, math.random(), 0)
-                game:GetService("TweenService"):Create(Particle, TweenInfo.new(math.random(3, 6), Enum.EasingStyle.Sine), {
-                    Position = newPos,
-                    BackgroundTransparency = math.random(50, 90) / 100
-                }):Play()
-            end
-        end)
-    end
-end
-
 -- Создание градиента
 local function CreateGradient(parent, colors, rotation)
     local Gradient = Instance.new("UIGradient")
@@ -46,23 +12,49 @@ local function CreateGradient(parent, colors, rotation)
     end
     Gradient.Color = ColorSequence.new(colorSequence)
     
-    -- Анимация градиента
-    spawn(function()
-        while wait(3) do
-            game:GetService("TweenService"):Create(Gradient, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-                Rotation = rotation + 360
-            }):Play()
-        end
-    end)
-    
     return Gradient
+end
+
+-- Создание системы частиц
+local function CreateParticles(parent)
+    local ParticlesFrame = Instance.new("Frame")
+    ParticlesFrame.Name = "ParticlesFrame"
+    ParticlesFrame.Parent = parent
+    ParticlesFrame.BackgroundTransparency = 1
+    ParticlesFrame.Size = UDim2.new(1, 0, 1, 0)
+    ParticlesFrame.ZIndex = 1
+    ParticlesFrame.ClipsDescendants = true
+    
+    for i = 1, 15 do
+        local Particle = Instance.new("Frame")
+        Particle.Parent = ParticlesFrame
+        Particle.BackgroundColor3 = Color3.fromRGB(153, 255, 238)
+        Particle.BackgroundTransparency = 0.7
+        Particle.Size = UDim2.new(0, math.random(2, 4), 0, math.random(2, 4))
+        Particle.Position = UDim2.new(math.random(), 0, math.random(), 0)
+        Particle.ZIndex = 1
+        
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(1, 0)
+        Corner.Parent = Particle
+        
+        spawn(function()
+            while Particle and Particle.Parent do
+                wait(math.random(2, 5))
+                local newPos = UDim2.new(math.random(), 0, math.random(), 0)
+                game:GetService("TweenService"):Create(Particle, TweenInfo.new(math.random(3, 6), Enum.EasingStyle.Sine), {
+                    Position = newPos,
+                    BackgroundTransparency = math.random(50, 90) / 100
+                }):Play()
+            end
+        end)
+    end
 end
 
 function Luxt1.CreateWindow(libName, logoId)
     local LuxtLib = Instance.new("ScreenGui")
     local shadow = Instance.new("ImageLabel")
     local MainFrame = Instance.new("Frame")
-    local MainGradient = Instance.new("UIGradient")
     local sideHeading = Instance.new("Frame")
     local MainCorner = Instance.new("UICorner")
     local sideCover = Instance.new("Frame")
@@ -77,18 +69,13 @@ function Luxt1.CreateWindow(libName, logoId)
     local MainCorner_4 = Instance.new("UICorner")
     local framesAll = Instance.new("Frame")
     local pageFolder = Instance.new("Folder")
-    
-    -- Новая боковая панель
-    local SlidePanel = Instance.new("Frame")
-    local SlidePanelCorner = Instance.new("UICorner")
-    local SlidePanelButton = Instance.new("TextButton")
-    
-    -- Система уведомлений
-    local NotificationHolder = Instance.new("Frame")
 
     local key1 = Instance.new("TextButton")
     local UICorner = Instance.new("UICorner")
     local keybindInfo1 = Instance.new("TextLabel")
+    
+    -- Система уведомлений
+    local NotificationHolder = Instance.new("Frame")
 
     libName = libName or "LuxtLib"
     logoId = logoId or ""
@@ -96,6 +83,101 @@ function Luxt1.CreateWindow(libName, logoId)
     LuxtLib.Name = "LuxtLib"..libName
     LuxtLib.Parent = game.CoreGui
     LuxtLib.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Holder для уведомлений
+    NotificationHolder.Name = "NotificationHolder"
+    NotificationHolder.Parent = LuxtLib
+    NotificationHolder.BackgroundTransparency = 1
+    NotificationHolder.Position = UDim2.new(1, -320, 0, 10)
+    NotificationHolder.Size = UDim2.new(0, 300, 1, -20)
+    NotificationHolder.ZIndex = 100
+    
+    local NotifList = Instance.new("UIListLayout")
+    NotifList.Parent = NotificationHolder
+    NotifList.SortOrder = Enum.SortOrder.LayoutOrder
+    NotifList.Padding = UDim.new(0, 10)
+    NotifList.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    
+    -- Функция создания уведомлений (локальная)
+    local function CreateNotification(title, text, duration)
+        local Notification = Instance.new("Frame")
+        local NotifCorner = Instance.new("UICorner")
+        local NotifTitle = Instance.new("TextLabel")
+        local NotifText = Instance.new("TextLabel")
+        local NotifClose = Instance.new("TextButton")
+        local NotifBar = Instance.new("Frame")
+        
+        Notification.Parent = NotificationHolder
+        Notification.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+        Notification.Size = UDim2.new(1, 0, 0, 0)
+        Notification.ClipsDescendants = true
+        Notification.ZIndex = 100
+        
+        CreateGradient(Notification, {
+            Color3.fromRGB(30, 20, 40),
+            Color3.fromRGB(20, 30, 50)
+        }, 45)
+        
+        NotifCorner.CornerRadius = UDim.new(0, 8)
+        NotifCorner.Parent = Notification
+        
+        NotifBar.Parent = Notification
+        NotifBar.BackgroundColor3 = Color3.fromRGB(153, 255, 238)
+        NotifBar.Size = UDim2.new(0, 3, 1, 0)
+        NotifBar.BorderSizePixel = 0
+        NotifBar.ZIndex = 101
+        
+        NotifTitle.Parent = Notification
+        NotifTitle.BackgroundTransparency = 1
+        NotifTitle.Position = UDim2.new(0, 15, 0, 8)
+        NotifTitle.Size = UDim2.new(1, -50, 0, 20)
+        NotifTitle.Font = Enum.Font.GothamBold
+        NotifTitle.Text = title or "Notification"
+        NotifTitle.TextColor3 = Color3.fromRGB(153, 255, 238)
+        NotifTitle.TextSize = 14
+        NotifTitle.TextXAlignment = Enum.TextXAlignment.Left
+        NotifTitle.ZIndex = 101
+        
+        NotifText.Parent = Notification
+        NotifText.BackgroundTransparency = 1
+        NotifText.Position = UDim2.new(0, 15, 0, 30)
+        NotifText.Size = UDim2.new(1, -25, 1, -40)
+        NotifText.Font = Enum.Font.Gotham
+        NotifText.Text = text or ""
+        NotifText.TextColor3 = Color3.fromRGB(200, 200, 200)
+        NotifText.TextSize = 12
+        NotifText.TextWrapped = true
+        NotifText.TextXAlignment = Enum.TextXAlignment.Left
+        NotifText.TextYAlignment = Enum.TextYAlignment.Top
+        NotifText.ZIndex = 101
+        
+        NotifClose.Parent = Notification
+        NotifClose.BackgroundTransparency = 1
+        NotifClose.Position = UDim2.new(1, -25, 0, 5)
+        NotifClose.Size = UDim2.new(0, 20, 0, 20)
+        NotifClose.Font = Enum.Font.GothamBold
+        NotifClose.Text = "×"
+        NotifClose.TextColor3 = Color3.fromRGB(255, 100, 100)
+        NotifClose.TextSize = 18
+        NotifClose.ZIndex = 101
+        
+        Notification:TweenSize(UDim2.new(1, 0, 0, 70), "Out", "Quint", 0.3, true)
+        
+        local function CloseNotif()
+            Notification:TweenSize(UDim2.new(1, 0, 0, 0), "In", "Quint", 0.3, true)
+            wait(0.3)
+            if Notification then
+                Notification:Destroy()
+            end
+        end
+        
+        NotifClose.MouseButton1Click:Connect(CloseNotif)
+        
+        spawn(function()
+            wait(duration or 5)
+            CloseNotif()
+        end)
+    end
 
     -- Основной фрейм с градиентом
     MainFrame.Name = "MainFrame"
@@ -104,17 +186,15 @@ function Luxt1.CreateWindow(libName, logoId)
     MainFrame.Position = UDim2.new(0.048, 0, 0.075, 0)
     MainFrame.Size = UDim2.new(0, 553, 0, 452)
     
-    -- Создание градиента для главного фона
     CreateGradient(MainFrame, {
         Color3.fromRGB(20, 20, 30),
         Color3.fromRGB(35, 25, 45),
         Color3.fromRGB(25, 35, 50)
     }, 45)
     
-    -- Создание частиц
     CreateParticles(MainFrame)
 
-    -- Боковая панель с градиентом
+    -- Боковая панель
     sideHeading.Name = "sideHeading"
     sideHeading.Parent = MainFrame
     sideHeading.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
@@ -145,26 +225,6 @@ function Luxt1.CreateWindow(libName, logoId)
     hubLogo.Size = UDim2.new(0, 30, 0, 30)
     hubLogo.ZIndex = 2
     hubLogo.Image = "rbxassetid://"..logoId
-    
-    -- Glow эффект для лого
-    local LogoGlow = Instance.new("ImageLabel")
-    LogoGlow.Parent = hubLogo
-    LogoGlow.BackgroundTransparency = 1
-    LogoGlow.Position = UDim2.new(-0.3, 0, -0.3, 0)
-    LogoGlow.Size = UDim2.new(1.6, 0, 1.6, 0)
-    LogoGlow.Image = "rbxassetid://6087537285"
-    LogoGlow.ImageColor3 = Color3.fromRGB(153, 255, 238)
-    LogoGlow.ImageTransparency = 0.5
-    LogoGlow.ZIndex = 1
-    
-    -- Анимация свечения
-    spawn(function()
-        while wait() do
-            game:GetService("TweenService"):Create(LogoGlow, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-                ImageTransparency = 0.8
-            }):Play()
-        end
-    end)
 
     MainCorner_2.CornerRadius = UDim.new(0, 999)
     MainCorner_2.Name = "MainCorner"
@@ -183,13 +243,6 @@ function Luxt1.CreateWindow(libName, logoId)
     hubName.TextSize = 14.000
     hubName.TextWrapped = true
     hubName.TextXAlignment = Enum.TextXAlignment.Left
-    
-    -- Градиент для текста
-    CreateGradient(hubName, {
-        Color3.fromRGB(153, 255, 238),
-        Color3.fromRGB(255, 153, 238),
-        Color3.fromRGB(153, 200, 255)
-    }, 0)
 
     tabFrame.Name = "tabFrame"
     tabFrame.Parent = sideHeading
@@ -224,7 +277,6 @@ function Luxt1.CreateWindow(libName, logoId)
     MainCorner_3.Name = "MainCorner"
     MainCorner_3.Parent = MainFrame
 
-    -- Улучшенная волна с градиентом
     wave.Name = "wave"
     wave.Parent = MainFrame
     wave.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -268,91 +320,8 @@ function Luxt1.CreateWindow(libName, logoId)
 
     pageFolder.Name = "pageFolder"
     pageFolder.Parent = framesAll
-    
-    -- Система уведомлений
-    NotificationHolder.Name = "NotificationHolder"
-    NotificationHolder.Parent = LuxtLib
-    NotificationHolder.BackgroundTransparency = 1
-    NotificationHolder.Position = UDim2.new(1, -320, 0, 10)
-    NotificationHolder.Size = UDim2.new(0, 300, 1, -20)
-    NotificationHolder.ZIndex = 100
-    
-    local NotifList = Instance.new("UIListLayout")
-    NotifList.Parent = NotificationHolder
-    NotifList.SortOrder = Enum.SortOrder.LayoutOrder
-    NotifList.Padding = UDim.new(0, 10)
-    
-    -- Функция создания уведомлений
-    local function CreateNotification(title, text, duration)
-        local Notification = Instance.new("Frame")
-        local NotifCorner = Instance.new("UICorner")
-        local NotifTitle = Instance.new("TextLabel")
-        local NotifText = Instance.new("TextLabel")
-        local NotifClose = Instance.new("TextButton")
-        
-        Notification.Parent = NotificationHolder
-        Notification.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-        Notification.Size = UDim2.new(1, 0, 0, 0)
-        Notification.ClipsDescendants = true
-        
-        CreateGradient(Notification, {
-            Color3.fromRGB(30, 20, 40),
-            Color3.fromRGB(20, 30, 50)
-        }, 45)
-        
-        NotifCorner.CornerRadius = UDim.new(0, 8)
-        NotifCorner.Parent = Notification
-        
-        NotifTitle.Parent = Notification
-        NotifTitle.BackgroundTransparency = 1
-        NotifTitle.Position = UDim2.new(0, 10, 0, 5)
-        NotifTitle.Size = UDim2.new(1, -40, 0, 20)
-        NotifTitle.Font = Enum.Font.GothamBold
-        NotifTitle.Text = title
-        NotifTitle.TextColor3 = Color3.fromRGB(153, 255, 238)
-        NotifTitle.TextSize = 14
-        NotifTitle.TextXAlignment = Enum.TextXAlignment.Left
-        
-        NotifText.Parent = Notification
-        NotifText.BackgroundTransparency = 1
-        NotifText.Position = UDim2.new(0, 10, 0, 28)
-        NotifText.Size = UDim2.new(1, -20, 1, -35)
-        NotifText.Font = Enum.Font.Gotham
-        NotifText.Text = text
-        NotifText.TextColor3 = Color3.fromRGB(200, 200, 200)
-        NotifText.TextSize = 12
-        NotifText.TextWrapped = true
-        NotifText.TextXAlignment = Enum.TextXAlignment.Left
-        NotifText.TextYAlignment = Enum.TextYAlignment.Top
-        
-        NotifClose.Parent = Notification
-        NotifClose.BackgroundTransparency = 1
-        NotifClose.Position = UDim2.new(1, -25, 0, 5)
-        NotifClose.Size = UDim2.new(0, 20, 0, 20)
-        NotifClose.Font = Enum.Font.GothamBold
-        NotifClose.Text = "×"
-        NotifClose.TextColor3 = Color3.fromRGB(255, 100, 100)
-        NotifClose.TextSize = 18
-        
-        Notification:TweenSize(UDim2.new(1, 0, 0, 80), "Out", "Quint", 0.3, true)
-        
-        local function CloseNotif()
-            Notification:TweenSize(UDim2.new(1, 0, 0, 0), "In", "Quint", 0.3, true)
-            wait(0.3)
-            Notification:Destroy()
-        end
-        
-        NotifClose.MouseButton1Click:Connect(CloseNotif)
-        
-        spawn(function()
-            wait(duration or 5)
-            CloseNotif()
-        end)
-    end
-    
-    LuxtLib.CreateNotification = CreateNotification
 
-    -- Кнопка переключения (с градиентом)
+    -- Кнопка скрытия
     key1.Name = "key1"
     key1.Parent = sideHeading
     key1.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
@@ -363,11 +332,6 @@ function Luxt1.CreateWindow(libName, logoId)
     key1.Text = "LeftAlt"
     key1.TextColor3 = Color3.fromRGB(153, 255, 238)
     key1.TextSize = 14.000
-    
-    CreateGradient(key1, {
-        Color3.fromRGB(153, 255, 238),
-        Color3.fromRGB(255, 153, 238)
-    }, 0)
 
     local oldKey = Enum.KeyCode.LeftAlt.Name
 
@@ -437,7 +401,11 @@ function Luxt1.CreateWindow(libName, logoId)
         end
     end)
 
+    -- Возвращаемый объект с функциями
     local TabHandling = {}
+    
+    -- ВАЖНО: Добавляем Notify как метод возвращаемого объекта
+    TabHandling.Notify = CreateNotification
 
     function TabHandling:Tab(tabText, tabId)
         local tabBtnFrame = Instance.new("Frame")
@@ -455,7 +423,6 @@ function Luxt1.CreateWindow(libName, logoId)
         tabBtnFrame.Size = UDim2.new(0, 135, 0, 30)
         tabBtnFrame.ZIndex = 2
         
-        -- Эффект свечения для вкладки
         TabGlow.Name = "TabGlow"
         TabGlow.Parent = tabBtnFrame
         TabGlow.BackgroundColor3 = Color3.fromRGB(153, 255, 238)
@@ -532,21 +499,20 @@ function Luxt1.CreateWindow(libName, logoId)
             
             for i,v in next, tabFrame:GetChildren() do
                 if v:IsA("Frame") then
-                    -- Убираем свечение у других вкладок
                     if v:FindFirstChild("TabGlow") then
                         game.TweenService:Create(v.TabGlow, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
                             BackgroundTransparency = 1
                         }):Play()
                     end
                     
-                    for i,v in next, v:GetChildren() do
-                        if v:IsA("TextButton") then
-                            game.TweenService:Create(v, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+                    for _,child in next, v:GetChildren() do
+                        if child:IsA("TextButton") then
+                            game.TweenService:Create(child, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
                                 TextColor3 = Color3.fromRGB(80, 80, 100)
                             }):Play()
                         end
-                        if v:IsA("ImageLabel") and v.Name == "tabLogo" then
-                            game.TweenService:Create(v, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+                        if child:IsA("ImageLabel") and child.Name == "tabLogo" then
+                            game.TweenService:Create(child, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
                                 ImageColor3 = Color3.fromRGB(80, 80, 100)
                             }):Play()
                         end
@@ -554,7 +520,6 @@ function Luxt1.CreateWindow(libName, logoId)
                 end
             end
             
-            -- Добавляем свечение активной вкладке
             game.TweenService:Create(TabGlow, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
                 BackgroundTransparency = 0.85
             }):Play()
@@ -565,9 +530,6 @@ function Luxt1.CreateWindow(libName, logoId)
             game.TweenService:Create(tabBtn, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
                 TextColor3 = Color3.fromRGB(153, 255, 238)
             }):Play()
-            
-            -- Уведомление при смене вкладки
-            CreateNotification("Tab Changed", "Switched to " .. tabText, 2)
         end)
 
         local sectionHandling = {}
@@ -597,7 +559,6 @@ function Luxt1.CreateWindow(libName, logoId)
             sectionFrame.ZIndex = 2
             sectionFrame.ClipsDescendants = true
             
-            -- Градиент для секции
             CreateGradient(sectionFrame, {
                 Color3.fromRGB(20, 15, 30),
                 Color3.fromRGB(15, 20, 35)
@@ -662,8 +623,8 @@ function Luxt1.CreateWindow(libName, logoId)
             function ItemHandling:Button(btnText, callback)
                 local ButtonFrame = Instance.new("Frame")
                 local TextButton = Instance.new("TextButton")
-                local UICorner = Instance.new("UICorner")
-                local UIListLayout = Instance.new("UIListLayout")
+                local BtnCorner = Instance.new("UICorner")
+                local BtnListLayout = Instance.new("UIListLayout")
                 local ButtonGlow = Instance.new("Frame")
 
                 btnText = btnText or "TextButton"
@@ -679,8 +640,8 @@ function Luxt1.CreateWindow(libName, logoId)
                 ButtonGlow.Parent = ButtonFrame
                 ButtonGlow.BackgroundColor3 = Color3.fromRGB(153, 255, 238)
                 ButtonGlow.BackgroundTransparency = 1
-                ButtonGlow.Position = UDim2.new(0, -3, 0, -3)
-                ButtonGlow.Size = UDim2.new(1, 6, 1, 6)
+                ButtonGlow.Position = UDim2.new(0.5, -185, 0.5, -21)
+                ButtonGlow.Size = UDim2.new(0, 370, 0, 42)
                 ButtonGlow.ZIndex = 1
                 
                 local GlowC = Instance.new("UICorner")
@@ -707,25 +668,21 @@ function Luxt1.CreateWindow(libName, logoId)
                     if not debounce then
                         debounce = true
                         callback()
-                        CreateNotification("Button Clicked", btnText .. " executed!", 2)
-                        wait(1)
+                        wait(0.5)
                         debounce = false
                     end
                 end)
 
-                UICorner.CornerRadius = UDim.new(0, 3)
-                UICorner.Parent = TextButton
+                BtnCorner.CornerRadius = UDim.new(0, 3)
+                BtnCorner.Parent = TextButton
 
-                UIListLayout.Parent = ButtonFrame
-                UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-                UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                BtnListLayout.Parent = ButtonFrame
+                BtnListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                BtnListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                BtnListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 
                 TextButton.MouseButton1Up:Connect(function()
                     TextButton:TweenSize(UDim2.new(0, 365, 0, 36), "InOut", "Quint", 0.18, true)
-                    game.TweenService:Create(TextButton, TweenInfo.new(0.18, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
-                        TextColor3 = Color3.fromRGB(180, 180, 200)
-                    }):Play()
                     game.TweenService:Create(ButtonGlow, TweenInfo.new(0.18, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
                         BackgroundTransparency = 1
                     }):Play()
@@ -733,9 +690,6 @@ function Luxt1.CreateWindow(libName, logoId)
                 
                 TextButton.MouseButton1Down:Connect(function()
                     TextButton:TweenSize(UDim2.new(0, 359, 0, 30), "InOut", "Quint", 0.18, true)
-                    game.TweenService:Create(TextButton, TweenInfo.new(0.18, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
-                        TextColor3 = Color3.fromRGB(0, 0, 0)
-                    }):Play()
                     game.TweenService:Create(ButtonGlow, TweenInfo.new(0.18, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
                         BackgroundTransparency = 0.7
                     }):Play()
@@ -760,20 +714,15 @@ function Luxt1.CreateWindow(libName, logoId)
                 end)
             end
 
-            -- Остальные функции (Toggle, KeyBind, TextBox, Slider, Label, Credit, DropDown) 
-            -- остаются практически такими же, но с добавлением градиентов
-            
-            -- Для краткости добавлю только Toggle с улучшениями
-            
             function ItemHandling:Toggle(toggInfo, callback)
                 local ToggleFrame = Instance.new("Frame")
                 local toggleFrame = Instance.new("Frame")
-                local UICorner = Instance.new("UICorner")
+                local TogCorner = Instance.new("UICorner")
                 local checkBtn = Instance.new("ImageButton")
                 local toggleInfo = Instance.new("TextLabel")
                 local togInList = Instance.new("UIListLayout")
                 local toginPad = Instance.new("UIPadding")
-                local UIListLayout = Instance.new("UIListLayout")
+                local TogListLayout = Instance.new("UIListLayout")
                 
                 toggInfo = toggInfo or "Toggle"
                 callback = callback or function() end
@@ -795,8 +744,8 @@ function Luxt1.CreateWindow(libName, logoId)
                     Color3.fromRGB(25, 20, 35)
                 }, 45)
 
-                UICorner.CornerRadius = UDim.new(0, 3)
-                UICorner.Parent = toggleFrame
+                TogCorner.CornerRadius = UDim.new(0, 3)
+                TogCorner.Parent = toggleFrame
 
                 checkBtn.Name = "checkBtn"
                 checkBtn.Parent = toggleFrame
@@ -833,10 +782,10 @@ function Luxt1.CreateWindow(libName, logoId)
                 toginPad.Parent = toggleFrame
                 toginPad.PaddingLeft = UDim.new(0, 7)
 
-                UIListLayout.Parent = ToggleFrame
-                UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-                UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                TogListLayout.Parent = ToggleFrame
+                TogListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                TogListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                TogListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 
                 local on = false
                 local togDe = false
@@ -848,17 +797,13 @@ function Luxt1.CreateWindow(libName, logoId)
                         callback(on)
                         
                         if on then
-                            checkBtn.Parent.toggleInfo.TextColor3 = Color3.fromRGB(153, 255, 238)
-                            checkBtn.ImageColor3 = Color3.fromRGB(153, 255, 238)
+                            game.TweenService:Create(toggleInfo, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(153, 255, 238)}):Play()
+                            game.TweenService:Create(checkBtn, TweenInfo.new(0.2), {ImageColor3 = Color3.fromRGB(153, 255, 238)}):Play()
                             checkBtn.ImageRectOffset = Vector2.new(4, 836)
-                            checkBtn.ImageRectSize = Vector2.new(48, 48)
-                            CreateNotification("Toggle ON", toggInfo .. " enabled", 2)
                         else
-                            checkBtn.Parent.toggleInfo.TextColor3 = Color3.fromRGB(97, 97, 117)
-                            checkBtn.ImageColor3 = Color3.fromRGB(97, 97, 117)
+                            game.TweenService:Create(toggleInfo, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(97, 97, 117)}):Play()
+                            game.TweenService:Create(checkBtn, TweenInfo.new(0.2), {ImageColor3 = Color3.fromRGB(97, 97, 117)}):Play()
                             checkBtn.ImageRectOffset = Vector2.new(940, 784)
-                            checkBtn.ImageRectSize = Vector2.new(48, 48)
-                            CreateNotification("Toggle OFF", toggInfo .. " disabled", 2)
                         end
                         
                         wait(0.3)
@@ -867,22 +812,225 @@ function Luxt1.CreateWindow(libName, logoId)
                 end)
 
                 checkBtn.MouseButton1Up:Connect(function()
-                    checkBtn.Parent:TweenSize(UDim2.new(0, 365, 0, 36), "InOut", "Quint", 0.18, true)
+                    toggleFrame:TweenSize(UDim2.new(0, 365, 0, 36), "InOut", "Quint", 0.18, true)
                 end)
 
                 checkBtn.MouseButton1Down:Connect(function()
-                    checkBtn.Parent:TweenSize(UDim2.new(0, 359, 0, 30), "InOut", "Quint", 0.18, true)
+                    toggleFrame:TweenSize(UDim2.new(0, 359, 0, 30), "InOut", "Quint", 0.18, true)
                 end)
             end
 
-            -- Добавление остальных элементов аналогично, но сокращено для длины ответа
-            -- Ключевые улучшения: градиенты, свечения, уведомления
-            
+            function ItemHandling:Label(labelInfo)
+                local TextLabelFrame = Instance.new("Frame")
+                local LabelListLayout = Instance.new("UIListLayout")
+                local TextLabel = Instance.new("TextLabel")
+                local LabelCorner = Instance.new("UICorner")
+                labelInfo = labelInfo or "Text Label"
+
+                TextLabelFrame.Name = "TextLabelFrame"
+                TextLabelFrame.Parent = sectionFrame
+                TextLabelFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+                TextLabelFrame.BackgroundTransparency = 1.000
+                TextLabelFrame.Size = UDim2.new(0, 365, 0, 36)
+
+                LabelListLayout.Parent = TextLabelFrame
+                LabelListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                LabelListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                LabelListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+                TextLabel.Parent = TextLabelFrame
+                TextLabel.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+                TextLabel.Size = UDim2.new(0, 365, 0, 36)
+                TextLabel.ZIndex = 2
+                TextLabel.Font = Enum.Font.GothamSemibold
+                TextLabel.Text = labelInfo
+                TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                TextLabel.TextSize = 14.000
+                
+                CreateGradient(TextLabel, {
+                    Color3.fromRGB(18, 18, 28),
+                    Color3.fromRGB(25, 20, 35)
+                }, 45)
+
+                LabelCorner.CornerRadius = UDim.new(0, 5)
+                LabelCorner.Parent = TextLabel
+            end
+
+            function ItemHandling:Credit(creditWho)
+                local TextLabelFrame = Instance.new("Frame")
+                local CreditListLayout = Instance.new("UIListLayout")
+                local TextLabel = Instance.new("TextLabel")
+                local CreditCorner = Instance.new("UICorner")
+                creditWho = creditWho or "Credit"
+
+                TextLabelFrame.Name = "TextLabelFrame"
+                TextLabelFrame.Parent = sectionFrame
+                TextLabelFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+                TextLabelFrame.BackgroundTransparency = 1.000
+                TextLabelFrame.Size = UDim2.new(0, 365, 0, 36)
+
+                CreditListLayout.Parent = TextLabelFrame
+                CreditListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                CreditListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                CreditListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+                TextLabel.Parent = TextLabelFrame
+                TextLabel.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+                TextLabel.Size = UDim2.new(0, 365, 0, 36)
+                TextLabel.ZIndex = 2
+                TextLabel.Font = Enum.Font.Gotham
+                TextLabel.Text = "  "..creditWho
+                TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                TextLabel.TextSize = 14.000
+                TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+                
+                CreateGradient(TextLabel, {
+                    Color3.fromRGB(18, 18, 28),
+                    Color3.fromRGB(25, 20, 35)
+                }, 45)
+
+                CreditCorner.CornerRadius = UDim.new(0, 5)
+                CreditCorner.Parent = TextLabel
+            end
+
+            function ItemHandling:Slider(slidInfo, minvalue, maxvalue, callback)
+                local SliderFrame = Instance.new("Frame")
+                local sliderFrame = Instance.new("Frame")
+                local SliderCorner = Instance.new("UICorner")
+                local sliderbtn = Instance.new("TextButton")
+                local SliderBtnCorner = Instance.new("UICorner")
+                local dragSlider = Instance.new("Frame")
+                local DragCorner = Instance.new("UICorner")
+                local sliderInfo = Instance.new("TextLabel")
+                local SliderListLayout = Instance.new("UIListLayout")
+                local sliderlist_2 = Instance.new("UIListLayout")
+                
+                slidInfo = slidInfo or "Slider"
+                minvalue = minvalue or 0
+                maxvalue = maxvalue or 100
+                callback = callback or function() end
+
+                SliderFrame.Name = "SliderFrame"
+                SliderFrame.Parent = sectionFrame
+                SliderFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+                SliderFrame.BackgroundTransparency = 1.000
+                SliderFrame.Size = UDim2.new(0, 365, 0, 36)
+
+                sliderFrame.Name = "sliderFrame"
+                sliderFrame.Parent = SliderFrame
+                sliderFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+                sliderFrame.Size = UDim2.new(0, 365, 0, 36)
+                sliderFrame.ZIndex = 2
+                
+                CreateGradient(sliderFrame, {
+                    Color3.fromRGB(18, 18, 28),
+                    Color3.fromRGB(25, 20, 35)
+                }, 45)
+
+                SliderCorner.CornerRadius = UDim.new(0, 3)
+                SliderCorner.Parent = sliderFrame
+
+                sliderbtn.Name = "sliderbtn"
+                sliderbtn.Parent = sliderFrame
+                sliderbtn.BackgroundColor3 = Color3.fromRGB(24, 24, 34)
+                sliderbtn.Position = UDim2.new(0.0167808235, 0, 0.416333348, 0)
+                sliderbtn.Size = UDim2.new(0, 150, 0, 6)
+                sliderbtn.ZIndex = 2
+                sliderbtn.AutoButtonColor = false
+                sliderbtn.Font = Enum.Font.SourceSans
+                sliderbtn.Text = ""
+                sliderbtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+                sliderbtn.TextSize = 14.000
+
+                SliderBtnCorner.CornerRadius = UDim.new(0, 5)
+                SliderBtnCorner.Parent = sliderbtn
+
+                dragSlider.Name = "dragSlider"
+                dragSlider.Parent = sliderbtn
+                dragSlider.BackgroundColor3 = Color3.fromRGB(153, 255, 238)
+                dragSlider.Size = UDim2.new(0, 0, 0, 6)
+                dragSlider.ZIndex = 2
+                
+                CreateGradient(dragSlider, {
+                    Color3.fromRGB(153, 255, 238),
+                    Color3.fromRGB(255, 153, 238)
+                }, 0)
+
+                DragCorner.CornerRadius = UDim.new(0, 5)
+                DragCorner.Parent = dragSlider
+
+                sliderInfo.Name = "sliderInfo"
+                sliderInfo.Parent = sliderFrame
+                sliderInfo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                sliderInfo.BackgroundTransparency = 1.000
+                sliderInfo.Position = UDim2.new(0.466095895, 0, 0, 0)
+                sliderInfo.Size = UDim2.new(0, 193, 0, 36)
+                sliderInfo.ZIndex = 2
+                sliderInfo.Font = Enum.Font.GothamSemibold
+                sliderInfo.Text = slidInfo .. " [" .. minvalue .. "]"
+                sliderInfo.TextColor3 = Color3.fromRGB(255, 255, 255)
+                sliderInfo.TextSize = 14.000
+                sliderInfo.TextXAlignment = Enum.TextXAlignment.Left
+
+                sliderlist_2.Name = "sliderlist"
+                sliderlist_2.Parent = sliderFrame
+                sliderlist_2.FillDirection = Enum.FillDirection.Horizontal
+                sliderlist_2.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                sliderlist_2.SortOrder = Enum.SortOrder.LayoutOrder
+                sliderlist_2.VerticalAlignment = Enum.VerticalAlignment.Center
+                sliderlist_2.Padding = UDim.new(0, 8)
+
+                SliderListLayout.Parent = SliderFrame
+                SliderListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                SliderListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                SliderListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+                local mouse = game.Players.LocalPlayer:GetMouse()
+                local uis = game:GetService("UserInputService")
+                local Value;
+
+                sliderbtn.MouseButton1Down:Connect(function()
+                    Value = math.floor((((tonumber(maxvalue) - tonumber(minvalue)) / 150) * dragSlider.AbsoluteSize.X) + tonumber(minvalue)) or 0
+                    pcall(function()
+                        callback(Value)
+                    end)
+                    sliderInfo.Text = slidInfo .. " [" .. Value .. "]"
+                    dragSlider.Size = UDim2.new(0, math.clamp(mouse.X - dragSlider.AbsolutePosition.X, 0, 150), 0, 6)
+                    
+                    local moveconnection
+                    local releaseconnection
+                    
+                    moveconnection = mouse.Move:Connect(function()
+                        Value = math.floor((((tonumber(maxvalue) - tonumber(minvalue)) / 150) * dragSlider.AbsoluteSize.X) + tonumber(minvalue))
+                        pcall(function()
+                            callback(Value)
+                        end)
+                        sliderInfo.Text = slidInfo .. " [" .. Value .. "]"
+                        dragSlider.Size = UDim2.new(0, math.clamp(mouse.X - dragSlider.AbsolutePosition.X, 0, 150), 0, 6)
+                    end)
+                    
+                    releaseconnection = uis.InputEnded:Connect(function(Mouse)
+                        if Mouse.UserInputType == Enum.UserInputType.MouseButton1 then
+                            Value = math.floor((((tonumber(maxvalue) - tonumber(minvalue)) / 150) * dragSlider.AbsoluteSize.X) + tonumber(minvalue))
+                            pcall(function()
+                                callback(Value)
+                            end)
+                            sliderInfo.Text = slidInfo .. " [" .. Value .. "]"
+                            moveconnection:Disconnect()
+                            releaseconnection:Disconnect()
+                        end
+                    end)
+                end)
+            end
+
             return ItemHandling
         end
         
         return sectionHandling
     end
+    
+    -- Показываем уведомление при загрузке
+    CreateNotification("GUI Loaded", libName .. " успешно загружен!", 3)
     
     return TabHandling
 end
