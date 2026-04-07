@@ -1,79 +1,79 @@
--- [[ ARMORED NETWORK SPY - IN & OUT ]] --
-local LogTable = {}
-local MaxEntries = 500 -- Лимит записей, чтобы память не взорвалась
+-- Конфигурация
+local MAX_BUFFER_SIZE = 500 -- Сколько строк хранить перед копированием (чтобы не лагало)
+local logBuffer = {}
+local LOG_HEADER = "--- [RE REAL-TIME LOG START] ---\n"
 
--- Функция превращения всего в текст (безопасная)
-local function safeString(v)
-    local s, res = pcall(function() return tostring(v) end)
-    return s and res or "???"
-end
+-- Функция для записи в буфер и клипборд
+local function logToClipboard(text)
+    local timestamp = os.date("%H:%M:%S")
+    local entry = string.format("[%s] %s", timestamp, text)
+    table.insert(logBuffer, entry)
+    
+    print(entry) -- Дублируем в консоль для удобства
 
--- Функция записи (в отдельном потоке)
-local function logEvent(dir, remote, args)
-    task.spawn(function()
-        if #LogTable >= MaxEntries then table.remove(LogTable, 1) end
-        
-        local argStr = ""
-        for i, v in pairs(args) do
-            argStr = argStr .. string.format("[%d]: %s (%s) | ", i, safeString(v), type(v))
+    if #logBuffer >= MAX_BUFFER_SIZE then
+        local fullLog = LOG_HEADER .. table.concat(logBuffer, "\n")
+        if setclipboard then
+            setclipboard(fullLog)
+            warn("!!! BUFFER FULL: Logs copied to clipboard !!!")
         end
-        
-        local entry = string.format("[%s] [%s] %s\nPath: %s\nArgs: %s\n%s", 
-            os.date("%X"), dir, remote.Name, remote:GetFullName(), argStr, string.rep("-", 20))
-        
-        table.insert(LogTable, entry)
-        print(string.format("[%s] %s", dir, remote.Name))
-    end)
+        logBuffer = {} -- Очищаем буфер после копирования
+    end
 end
 
--- ХУК: Исходящие (Твои действия)
-local mt = getrawmetatable(game)
-local oldNamecall = mt.__namecall
-local oldIndex = mt.__index
-setreadonly(mt, false)
-
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-    
-    if method == "FireServer" or method == "InvokeServer" then
-        logEvent("OUT", self, args)
-    end
-    
-    return oldNamecall(self, ...)
+-- 1. ОТСЛЕЖИВАНИЕ НОВЫХ ОБЪЕКТОВ
+game.DescendantAdded:Connect(function(obj)
+    pcall(function()
+        logToClipboard(string.format("NEW INSTANCE: %s | Class: %s | Parent: %s", obj:GetFullName(), obj.ClassName, tostring(obj.Parent)))
+    end)
 end)
 
--- ХУК: Входящие (Ответы сервера)
--- Мы подменяем метод Connect, чтобы ловить сигналы сервера "на лету"
-mt.__index = newcclosure(function(t, k)
-    local res = oldIndex(t, k)
-    if k == "OnClientEvent" and t:IsA("RemoteEvent") then
-        local oldConnect = res.Connect
-        res.Connect = function(self, func)
-            return oldConnect(self, function(...)
-                logEvent("IN", t, {...})
-                return func(...)
-            end)
-        end
+-- 2. ОТСЛЕЖИВАНИЕ УДАЛЕНИЯ
+game.DescendantRemoving:Connect(function(obj)
+    pcall(function()
+        logToClipboard(string.format("REMOVED: %s (from %s)", obj.Name, tostring(obj.Parent)))
+    end)
+end)
+
+-- 3. ХУК МЕТАТАБЛИЦЫ (Слежка за изменением свойств скриптами)
+-- Это "сердце" реверс-инжиниринга. Мы видим, когда скрипт меняет свойство.
+local mt = getrawmetatable(game)
+local oldNewIndex = mt.__newindex
+setreadonly(mt, false)
+
+mt.__newindex = newcclosure(function(t, k, v)
+    -- Фильтруем шум (не логируем изменения в GUI игрока, если их слишком много)
+    if not tostring(t):find("PlayerGui") then
+        local callingScript = getfenv(2).script -- Пытаемся определить, какой скрипт вызвал изменение
+        local scriptPath = callingScript and callingScript:GetFullName() or "Unknown/Internal"
+        
+        logToClipboard(string.format("PROPERTY CHANGE: %s.%s = %s | BY SCRIPT: %s", tostring(t), tostring(k), tostring(v), scriptPath))
     end
-    return res
+    return oldNewIndex(t, k, v)
 end)
 
 setreadonly(mt, true)
 
--- КОМАНДА ДЛЯ КОПИРОВАНИЯ
-_G.CopyLog = function()
-    local finalLog = table.concat(LogTable, "\n")
-    if setclipboard then
-        setclipboard(finalLog)
-        warn("!!! ЛОГ ИЗ " .. #LogTable .. " СОБЫТИЙ СКОПИРОВАН !!!")
-    else
-        print(finalLog)
-    end
+-- 4. ОТСЛЕЖИВАНИЕ АТРИБУТОВ (Часто используется в новых играх)
+local function trackAttributes(obj)
+    obj.AttributeChanged:Connect(function(attr)
+        logToClipboard(string.format("ATTRIBUTE CHANGE: %s | Attr: %s | Value: %s", obj:GetFullName(), attr, tostring(obj:GetAttribute(attr))))
+    end)
 end
 
-print("-----------------------------------------")
-print("[+] ШПИОН ЗАПУЩЕН (ИН/АУТ).")
-print("[!] Если меч не работает - значит сервер проверяет скорость.")
-print("[!] Команда: _G.CopyLog()")
-print("-----------------------------------------")
+-- Применяем трекер атрибутов ко всем существующим объектам (осторожно, может быть ресурсоемко)
+for _, v in ipairs(game:GetDescendants()) do
+    pcall(trackAttributes, v)
+end
+
+-- 5. ГОРЯЧАЯ КЛАВИША ДЛЯ ПРИНУДИТЕЛЬНОГО КОПИРОВАНИЯ
+local UIS = game:GetService("UserInputService")
+UIS.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == Enum.KeyCode.RightControl then
+        local currentLog = LOG_HEADER .. table.concat(logBuffer, "\n")
+        setclipboard(currentLog)
+        warn("--- LOG MANUALLY COPIED TO CLIPBOARD ---")
+    end
+end)
+
+print("--- [MONITORING ACTIVE: Press RightControl to Copy Logs] ---")
