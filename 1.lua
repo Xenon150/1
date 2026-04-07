@@ -4,11 +4,10 @@ local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 
--- Глобальные настройки темы
 local Theme = {
     MainBg = Color3.fromRGB(25, 25, 25),
     SideBg = Color3.fromRGB(18, 18, 18),
-    Primary = Color3.fromRGB(153, 255, 238), -- Неоновый голубой
+    Primary = Color3.fromRGB(153, 255, 238),
     ItemBg = Color3.fromRGB(30, 30, 30),
     ItemHover = Color3.fromRGB(40, 40, 40),
     Stroke = Color3.fromRGB(45, 45, 45),
@@ -16,7 +15,6 @@ local Theme = {
     TextMuted = Color3.fromRGB(150, 150, 150)
 }
 
--- Функция для быстрого создания Tween-анимаций
 local function Tween(instance, properties, duration)
     duration = duration or 0.2
     local tween = TweenService:Create(instance, TweenInfo.new(duration, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), properties)
@@ -123,7 +121,6 @@ function Luxt1.CreateWindow(libName, logoId)
     UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
     UIListLayout.Padding = UDim.new(0, 5)
 
-    -- Настройки скрытия UI (Toggle UI Keybind)
     key1.Name = "key1"
     key1.Parent = sideHeading
     key1.BackgroundColor3 = Theme.ItemBg
@@ -183,7 +180,6 @@ function Luxt1.CreateWindow(libName, logoId)
     pageFolder.Name = "pageFolder"
     pageFolder.Parent = framesAll
 
-    -- Идеальная система Drag (перетаскивание)
     local dragging, dragInput, dragStart, startPos
     local function updateDrag(input)
         local delta = input.Position - dragStart
@@ -653,22 +649,9 @@ function Luxt1.CreateWindow(libName, logoId)
     return TabHandling
 end
 
-
----------------------------------------------------------
--- 👇 ВОТ ЭТО ЧАСТЬ ДЛЯ ЗАПУСКА И ТЕСТИРОВАНИЯ 👇
----------------------------------------------------------
-
 local Window = Luxt1.CreateWindow("Luxt v2", "13042861502")
-
 local Tab1 = Window:Tab("Main", "13042861502")
-local Tab2 = Window:Tab("Settings", "13042861502")
+local Section1 = Tab1:Section("Test Section")
 
-local Section1 = Tab1:Section("Aim Setup")
-local Section2 = Tab1:Section("Visuals")
-
-Section1:Toggle("Aimbot Enabled", function(state) print("Aimbot:", state) end)
-Section1:Slider("FOV Size", 0, 300, function(v) print("FOV:", v) end)
-Section1:DropDown("Target Part", {"Head", "Torso", "Legs"}, function(v) print("Target:", v) end)
-
-Section2:Button("Kill All", function() print("Kill All clicked!") end)
-Section2:TextBox("Player Name", "Enter name...", function(text) print("Entered text:", text) end)
+Section1:Toggle("Test Toggle", function(state) print(state) end)
+Section1:Slider("Test Slider", 0, 100, function(v) print(v) end)
