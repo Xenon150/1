@@ -259,7 +259,6 @@ function Luxt1.CreateWindow(libName, logoId)
         sectionList.SortOrder = Enum.SortOrder.LayoutOrder
         sectionList.Padding = UDim.new(0, 8)
 
-        -- Автоматический размер страницы
         sectionList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
             newPage.CanvasSize = UDim2.new(0, 0, 0, sectionList.AbsoluteContentSize.Y + 10)
         end)
@@ -332,7 +331,6 @@ function Luxt1.CreateWindow(libName, logoId)
             sectionExpand.ImageRectSize = Vector2.new(36, 36)
             sectionExpand.Rotation = 180
 
-            -- Автоматический размер секции
             sectionInnerList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
                 if isDropped then
                     sectionFrame.Size = UDim2.new(1, -10, 0, sectionInnerList.AbsoluteContentSize.Y + 8)
@@ -351,8 +349,6 @@ function Luxt1.CreateWindow(libName, logoId)
             end)
 
             local ItemHandling = {}
-
-            -- ======= ВНУТРЕННИЕ ЭЛЕМЕНТЫ UI ======= --
 
             function ItemHandling:Button(btnText, callback)
                 btnText = btnText or "Button"
@@ -657,4 +653,22 @@ function Luxt1.CreateWindow(libName, logoId)
     return TabHandling
 end
 
-return Luxt1
+
+---------------------------------------------------------
+-- 👇 ВОТ ЭТО ЧАСТЬ ДЛЯ ЗАПУСКА И ТЕСТИРОВАНИЯ 👇
+---------------------------------------------------------
+
+local Window = Luxt1.CreateWindow("Luxt v2", "13042861502")
+
+local Tab1 = Window:Tab("Main", "13042861502")
+local Tab2 = Window:Tab("Settings", "13042861502")
+
+local Section1 = Tab1:Section("Aim Setup")
+local Section2 = Tab1:Section("Visuals")
+
+Section1:Toggle("Aimbot Enabled", function(state) print("Aimbot:", state) end)
+Section1:Slider("FOV Size", 0, 300, function(v) print("FOV:", v) end)
+Section1:DropDown("Target Part", {"Head", "Torso", "Legs"}, function(v) print("Target:", v) end)
+
+Section2:Button("Kill All", function() print("Kill All clicked!") end)
+Section2:TextBox("Player Name", "Enter name...", function(text) print("Entered text:", text) end)
